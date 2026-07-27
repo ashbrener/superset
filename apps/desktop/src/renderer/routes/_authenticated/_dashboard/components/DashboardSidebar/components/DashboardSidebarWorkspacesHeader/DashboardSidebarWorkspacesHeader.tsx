@@ -11,7 +11,7 @@ import { cn } from "@superset/ui/utils";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { HiChevronRight } from "react-icons/hi2";
-import { LuFolderPlus } from "react-icons/lu";
+import { LuFolders } from "react-icons/lu";
 import {
 	VscFolderOpened,
 	VscGithubAlt,
@@ -159,9 +159,11 @@ export function DashboardSidebarWorkspacesHeader({
 						Start from a template
 					</DropdownMenuItem>
 					<DropdownMenuSeparator />
+					{/* Sits directly under "Create new project", which also carries a
+					    folder icon — so name the level and use the project-folder icon. */}
 					<DropdownMenuItem onSelect={onNewFolder}>
-						<LuFolderPlus className="size-4" />
-						New folder
+						<LuFolders className="size-4" />
+						New project folder
 					</DropdownMenuItem>
 				</DropdownMenuContent>
 			</DropdownMenu>

@@ -64,9 +64,12 @@ export function DashboardSidebarProjectContextMenu({
 					<LuSettings className="size-4 mr-2" />
 					Project Settings
 				</ContextMenuItem>
+				{/* "workspace group" and "folder" sit two items apart here, so both
+				    labels name the level they act on. LuFolderPlus is the workspace
+				    level, LuFolders the project level. */}
 				<ContextMenuItem onSelect={onCreateSection}>
 					<LuFolderPlus className="size-4 mr-2" />
-					New group
+					New workspace group
 				</ContextMenuItem>
 				<ContextMenuSeparator />
 				<ContextMenuSub>
@@ -76,7 +79,7 @@ export function DashboardSidebarProjectContextMenu({
 					</ContextMenuSubTrigger>
 					<ContextMenuSubContent className="max-h-80 w-48 overflow-y-auto">
 						<ContextMenuItem onSelect={onCreateFolderWithProject}>
-							<LuFolderPlus className="size-4 mr-2" />
+							<LuFolders className="size-4 mr-2" />
 							New folder…
 						</ContextMenuItem>
 						{folders.length > 0 && <ContextMenuSeparator />}
