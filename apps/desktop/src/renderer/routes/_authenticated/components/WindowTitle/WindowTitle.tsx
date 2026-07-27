@@ -21,9 +21,9 @@ export function WindowTitle() {
 	);
 
 	useEffect(() => {
-		document.title = activeOrganization?.name
-			? `${activeOrganization.name} — ${productName}`
-			: productName;
+		// Org name alone: the macOS Window menu lists these titles under the
+		// Superset menu bar, so a "— Superset" suffix on every entry is noise.
+		document.title = activeOrganization?.name ?? productName;
 	}, [activeOrganization?.name]);
 
 	return null;
