@@ -15,6 +15,7 @@ import {
 	setHostServiceSecret,
 } from "renderer/lib/host-service-auth";
 import type { HostServiceAvailabilityStatus } from "renderer/lib/host-service-unavailable";
+import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { MOCK_ORG_ID } from "shared/constants";
 
 interface LocalHostServiceContextValue {
@@ -40,7 +41,6 @@ export function LocalHostServiceProvider({
 	children: ReactNode;
 }) {
 	const utils = electronTrpc.useUtils();
-	const { data: session } = authClient.useSession();
 	const { data: activeOrganization } = authClient.useActiveOrganization();
 	const { mutate: startHostService } =
 		electronTrpc.hostServiceCoordinator.start.useMutation({
@@ -58,9 +58,16 @@ export function LocalHostServiceProvider({
 			},
 		});
 
+	// Per-window org, not the shared session: each window runs its host service
+	// against the org THAT window is showing. Reading the session here would
+	// point every window at whichever org the session happened to hold, so a
+	// second window on a different org showed the first org's projects.
+	// This provider is mounted inside CollectionsProvider, which owns the
+	// per-window org.
+	const { activeOrganizationId: windowOrganizationId } = useCollections();
 	const activeOrganizationId = env.SKIP_ENV_VALIDATION
 		? MOCK_ORG_ID
-		: (session?.session?.activeOrganizationId ?? null);
+		: (windowOrganizationId ?? null);
 
 	const { data: machineIdData } = electronTrpc.device.getMachineId.useQuery(
 		undefined,
