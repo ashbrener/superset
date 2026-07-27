@@ -42,13 +42,16 @@ export function DashboardSidebarProjectSection({
 
 	const {
 		cancelRename,
+		confirmMoveToOrganization,
 		confirmRemoveFromSidebar,
 		deleteSection,
 		handleNewSection,
 		handleNewWorkspace,
 		handleOpenInFinder,
 		handleOpenSettings,
+		isMovingToOrganization,
 		isRenaming,
+		moveTargetOrganizations,
 		renameSection,
 		renameValue,
 		setRenameValue,
@@ -68,6 +71,9 @@ export function DashboardSidebarProjectSection({
 				onOpenInFinder={handleOpenInFinder}
 				onOpenSettings={handleOpenSettings}
 				onRemoveFromSidebar={confirmRemoveFromSidebar}
+				moveTargetOrganizations={moveTargetOrganizations}
+				onMoveToOrganization={confirmMoveToOrganization}
+				isMovingToOrganization={isMovingToOrganization}
 				onRename={startRename}
 			>
 				<div className="mt-1 first:mt-0">
@@ -94,6 +100,9 @@ export function DashboardSidebarProjectSection({
 				onOpenInFinder={handleOpenInFinder}
 				onOpenSettings={handleOpenSettings}
 				onRemoveFromSidebar={confirmRemoveFromSidebar}
+				moveTargetOrganizations={moveTargetOrganizations}
+				onMoveToOrganization={confirmMoveToOrganization}
+				isMovingToOrganization={isMovingToOrganization}
 				onRename={startRename}
 			>
 				<DashboardSidebarProjectRow

@@ -1,5 +1,6 @@
 import { alert } from "@superset/ui/atoms/Alert";
 import { toast } from "@superset/ui/sonner";
+import { useLiveQuery } from "@tanstack/react-db";
 import { useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useHostProjects } from "renderer/hooks/host-projects/useHostProjects";
@@ -7,6 +8,8 @@ import { useHostUrl } from "renderer/hooks/host-service/useHostTargetUrl";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { useDashboardSidebarSectionRename } from "renderer/routes/_authenticated/_dashboard/components/DashboardSidebar/components/DashboardSidebarSectionRenameContext";
 import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
+import { useMoveProjectToOrganization } from "renderer/routes/_authenticated/hooks/useMoveProjectToOrganization";
+import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { useOpenNewWorkspaceModal } from "renderer/stores/new-workspace-modal";
 import type { DashboardSidebarProject } from "../../../../types";
@@ -44,6 +47,27 @@ export function useDashboardSidebarProjectSectionActions({
 		toggleProjectCollapsed,
 		toggleSectionCollapsed,
 	} = useDashboardSidebarState();
+
+	// Orgs the user belongs to, minus the one showing this project. The
+	// `organizations` collection is unscoped — it is exactly "orgs I'm in".
+	const collections = useCollections();
+	const { data: organizations } = useLiveQuery(
+		(q) => q.from({ organizations: collections.organizations }),
+		[collections],
+	);
+	const { activeOrganizationId } = useLocalHostService();
+	const moveTargetOrganizations = useMemo(
+		() =>
+			(organizations ?? [])
+				.filter((organization) => organization.id !== activeOrganizationId)
+				.map((organization) => ({
+					id: organization.id,
+					name: organization.name,
+				})),
+		[organizations, activeOrganizationId],
+	);
+	const { moveProjectToOrganization, isMoving: isMovingToOrganization } =
+		useMoveProjectToOrganization();
 
 	const [isRenaming, setIsRenaming] = useState(false);
 	const [renameValue, setRenameValue] = useState(project.name);
@@ -102,6 +126,45 @@ export function useDashboardSidebarProjectSectionActions({
 		});
 	};
 
+	const confirmMoveToOrganization = (organizationId: string) => {
+		const organization = moveTargetOrganizations.find(
+			(candidate) => candidate.id === organizationId,
+		);
+		if (!organization) return;
+		alert({
+			title: `Move to ${organization.name}?`,
+			description:
+				"The repo and its worktrees move across with their branches intact — nothing on disk changes. Running terminals and agent sessions close, and the project leaves this organization.",
+			actions: [
+				{ label: "Cancel", variant: "outline", onClick: () => {} },
+				{
+					label: "Move",
+					onClick: () => {
+						void moveProjectToOrganization({
+							projectId: project.id,
+							targetOrganizationId: organizationId,
+						})
+							.then(({ skippedWorkspaces }) => {
+								if (skippedWorkspaces.length > 0) {
+									toast.warning(
+										`Moved to ${organization.name}, but ${skippedWorkspaces.length} worktree(s) couldn't be adopted: ${skippedWorkspaces.join(", ")}`,
+									);
+									return;
+								}
+								toast.success(`Moved ${project.name} to ${organization.name}`);
+							})
+							.catch((error: unknown) => {
+								toast.error("Couldn't move the project", {
+									description:
+										error instanceof Error ? error.message : String(error),
+								});
+							});
+					},
+				},
+			],
+		});
+	};
+
 	const handleNewWorkspace = () => {
 		openModal(project.id);
 	};
@@ -116,8 +179,11 @@ export function useDashboardSidebarProjectSectionActions({
 
 	return {
 		cancelRename,
+		confirmMoveToOrganization,
 		confirmRemoveFromSidebar,
 		deleteSection,
+		isMovingToOrganization,
+		moveTargetOrganizations,
 		handleNewSection,
 		handleNewWorkspace,
 		handleOpenInFinder,

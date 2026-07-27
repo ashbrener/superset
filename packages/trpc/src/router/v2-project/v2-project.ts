@@ -1,21 +1,27 @@
 import { dbWs } from "@superset/db/client";
 import {
+	automationRuns,
+	automations,
+	chatAttachments,
+	chatSessions,
 	githubRepositories,
 	organizations,
+	v2Hosts,
 	v2Projects,
+	v2Workspaces,
 } from "@superset/db/schema";
 import { getCurrentTxid } from "@superset/db/utils";
 import { parseGitHubRemote } from "@superset/shared/github-remote";
 import type { TRPCRouterRecord } from "@trpc/server";
 import { TRPCError } from "@trpc/server";
 import { del } from "@vercel/blob";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { posthog } from "../../lib/analytics";
 import { fetchAndStoreGitHubAvatar } from "../../lib/github-avatar";
 import { generateImagePathname, uploadImage } from "../../lib/upload";
 import { jwtProcedure, protectedProcedure } from "../../trpc";
-import { verifyOrgOwner } from "../integration/utils";
+import { verifyOrgMembership, verifyOrgOwner } from "../integration/utils";
 import { requireActiveOrgId } from "../utils/active-org";
 import {
 	requireOrgResourceAccess,
@@ -498,6 +504,231 @@ export const v2ProjectRouter = {
 				});
 			}
 			return { ...updated, txid };
+		}),
+
+	moveToOrganization: protectedProcedure
+		.input(
+			z.object({
+				id: z.string().uuid(),
+				targetOrganizationId: z.string().uuid(),
+				// Callers pass a slug only to resolve a clash in the target org;
+				// otherwise the project keeps the one it already has.
+				slug: z.string().min(1).optional(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const sourceOrgId = requireActiveOrgId(ctx, "No active organization");
+			if (input.targetOrganizationId === sourceOrgId) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: "Project is already in this organization",
+				});
+			}
+
+			await getProjectAccess(ctx.session.user.id, input.id, {
+				organizationId: sourceOrgId,
+			});
+			// The destination is not the active org, so no upstream check covers
+			// it — a move is a write into that org and needs its own membership
+			// check.
+			await verifyOrgMembership(
+				ctx.session.user.id,
+				input.targetOrganizationId,
+			);
+
+			const project = await dbWs.query.v2Projects.findFirst({
+				where: eq(v2Projects.id, input.id),
+			});
+			if (!project) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Project not found",
+				});
+			}
+
+			const slug = input.slug ?? project.slug;
+			const clash = await dbWs.query.v2Projects.findFirst({
+				columns: { id: true },
+				where: and(
+					eq(v2Projects.organizationId, input.targetOrganizationId),
+					eq(v2Projects.slug, slug),
+				),
+			});
+			if (clash) {
+				throw new TRPCError({
+					code: "CONFLICT",
+					message: `A project with slug "${slug}" already exists in the target organization. Pass a different slug to move it.`,
+				});
+			}
+
+			// v2_workspaces carries a composite FK (organization_id, host_id) →
+			// v2_hosts(organization_id, machine_id). Without this pre-flight the
+			// FK aborts mid-transaction and the whole move rolls back with an
+			// opaque driver error.
+			const workspaceHosts = await dbWs
+				.selectDistinct({ hostId: v2Workspaces.hostId })
+				.from(v2Workspaces)
+				.where(eq(v2Workspaces.projectId, input.id));
+			const hostIds = workspaceHosts.map((row) => row.hostId);
+			if (hostIds.length > 0) {
+				const targetHosts = await dbWs
+					.select({ machineId: v2Hosts.machineId })
+					.from(v2Hosts)
+					.where(
+						and(
+							eq(v2Hosts.organizationId, input.targetOrganizationId),
+							inArray(v2Hosts.machineId, hostIds),
+						),
+					);
+				const registered = new Set(targetHosts.map((row) => row.machineId));
+				const missing = hostIds.filter((hostId) => !registered.has(hostId));
+				if (missing.length > 0) {
+					throw new TRPCError({
+						code: "PRECONDITION_FAILED",
+						message: `Host ${missing.join(", ")} is not registered in the target organization. Start the host there first so it registers, then retry the move.`,
+					});
+				}
+			}
+
+			// github_repositories.repo_id is globally unique and every resolver
+			// re-filters repositories by org, so a carried-over id would silently
+			// resolve to nothing in the target org. Re-resolve the same repo there
+			// by full name (what `create` and `linkRepoCloneUrl` match on).
+			let targetGithubRepositoryId: string | null = null;
+			if (project.githubRepositoryId) {
+				const sourceRepo = await dbWs.query.githubRepositories.findFirst({
+					columns: { fullName: true },
+					where: eq(githubRepositories.id, project.githubRepositoryId),
+				});
+				if (sourceRepo) {
+					const targetRepo = await dbWs.query.githubRepositories.findFirst({
+						columns: { id: true },
+						where: and(
+							eq(
+								sql`lower(${githubRepositories.fullName})`,
+								sourceRepo.fullName.toLowerCase(),
+							),
+							eq(githubRepositories.organizationId, input.targetOrganizationId),
+						),
+					});
+					targetGithubRepositoryId = targetRepo?.id ?? null;
+				}
+			}
+
+			let moved: typeof v2Projects.$inferSelect | undefined;
+			let txid: number | null = null;
+			try {
+				const result = await dbWs.transaction(async (tx) => {
+					const movedRows = await tx
+						.update(v2Projects)
+						.set({
+							organizationId: input.targetOrganizationId,
+							slug,
+							githubRepositoryId: targetGithubRepositoryId,
+						})
+						.where(
+							and(
+								eq(v2Projects.id, input.id),
+								eq(v2Projects.organizationId, sourceOrgId),
+							),
+						)
+						.returning();
+					const movedProject = movedRows[0];
+					// Zero rows means a concurrent move or delete beat us to it.
+					if (!movedProject || movedRows.length !== 1) {
+						throw new TRPCError({
+							code: "NOT_FOUND",
+							message: "Project not found",
+						});
+					}
+
+					const workspaceRows = await tx
+						.update(v2Workspaces)
+						.set({
+							organizationId: input.targetOrganizationId,
+							// Tasks are org-scoped rather than project-scoped, so they
+							// stay behind; keeping the reference would leave the
+							// workspace pointing at a task in the source org.
+							taskId: null,
+						})
+						.where(eq(v2Workspaces.projectId, input.id))
+						.returning({ id: v2Workspaces.id });
+
+					const workspaceIds = workspaceRows.map((row) => row.id);
+					if (workspaceIds.length > 0) {
+						const sessionRows = await tx
+							.update(chatSessions)
+							.set({ organizationId: input.targetOrganizationId })
+							.where(inArray(chatSessions.v2WorkspaceId, workspaceIds))
+							.returning({ id: chatSessions.id });
+						const sessionIds = sessionRows.map((row) => row.id);
+						if (sessionIds.length > 0) {
+							await tx
+								.update(chatAttachments)
+								.set({ organizationId: input.targetOrganizationId })
+								.where(inArray(chatAttachments.chatSessionId, sessionIds));
+						}
+					}
+
+					// automations.v2_project_id has no foreign key, so nothing
+					// cascades here — the org column has to be rewritten by hand.
+					const automationRows = await tx
+						.update(automations)
+						.set({ organizationId: input.targetOrganizationId })
+						.where(eq(automations.v2ProjectId, input.id))
+						.returning({ id: automations.id });
+					const automationIds = automationRows.map((row) => row.id);
+					if (automationIds.length > 0) {
+						await tx
+							.update(automationRuns)
+							.set({ organizationId: input.targetOrganizationId })
+							.where(inArray(automationRuns.automationId, automationIds));
+					}
+
+					const currentTxid = await getCurrentTxid(tx);
+					return { project: movedProject, txid: currentTxid };
+				});
+				moved = result.project;
+				txid = result.txid;
+			} catch (err) {
+				// The slug pre-check above is racy, so keep the constraint-name
+				// catch as the authoritative guard. Drizzle wraps pg errors in a
+				// "Failed query:" envelope; walk the cause chain for the name.
+				let cur: unknown = err;
+				let constraint: string | null = null;
+				while (cur && constraint === null) {
+					const c = (cur as { constraint?: unknown }).constraint;
+					if (typeof c === "string") constraint = c;
+					cur = (cur as { cause?: unknown }).cause;
+				}
+				if (constraint === "v2_projects_org_slug_unique") {
+					throw new TRPCError({
+						code: "CONFLICT",
+						message: `A project with slug "${slug}" already exists in the target organization. Pass a different slug to move it.`,
+						cause: err,
+					});
+				}
+				throw err;
+			}
+			if (!moved) {
+				throw new TRPCError({
+					code: "INTERNAL_SERVER_ERROR",
+					message: "Failed to move project",
+				});
+			}
+
+			posthog.capture({
+				distinctId: ctx.session.user.id,
+				event: "project_moved_organization",
+				properties: {
+					project_id: moved.id,
+					organization_id: moved.organizationId,
+					source_organization_id: sourceOrgId,
+					surface: "v2",
+				},
+			});
+
+			return { ...moved, txid };
 		}),
 
 	delete: jwtProcedure
