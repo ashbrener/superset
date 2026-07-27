@@ -1,3 +1,4 @@
+import { useDroppable } from "@dnd-kit/core";
 import { Button } from "@superset/ui/button";
 import {
 	ContextMenu,
@@ -29,6 +30,7 @@ import {
 	PROJECT_COLORS,
 } from "shared/constants/project-colors";
 import type { DashboardSidebarFolder } from "../../types";
+import { folderDropId } from "../../utils/folderDnd";
 
 type MenuKind = "context" | "dropdown";
 
@@ -85,6 +87,11 @@ export function DashboardSidebarFolderHeader({
 		setIsRenaming(false);
 		onAutoRenameEnd?.();
 	}, [folder.name, onAutoRenameEnd]);
+
+	// Dropping a dragged project on this header moves it into the folder.
+	const { setNodeRef: setDropRef, isOver } = useDroppable({
+		id: folderDropId(folder.id),
+	});
 
 	const hasColor =
 		folder.color != null && folder.color !== PROJECT_COLOR_DEFAULT;
@@ -157,6 +164,7 @@ export function DashboardSidebarFolderHeader({
 			<ContextMenuTrigger asChild>
 				{/* biome-ignore lint/a11y/noStaticElementInteractions: header is a single toggle target while keeping nested inline controls. */}
 				<div
+					ref={setDropRef}
 					role={isRenaming ? undefined : "button"}
 					tabIndex={isRenaming ? undefined : 0}
 					onClick={isRenaming ? undefined : () => onToggleCollapse(folder.id)}
@@ -173,6 +181,8 @@ export function DashboardSidebarFolderHeader({
 					className={cn(
 						"group mx-2 flex min-h-7 items-center rounded-md py-1 pl-2 pr-2 text-[13px] font-semibold",
 						"text-muted-foreground transition-colors hover:bg-fill-hover",
+						// Highlight while a dragged project hovers this folder.
+						isOver && "bg-fill-hover ring-1 ring-primary/50",
 					)}
 					style={{
 						borderLeft: hasColor

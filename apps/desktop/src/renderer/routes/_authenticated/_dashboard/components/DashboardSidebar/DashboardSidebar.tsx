@@ -7,6 +7,7 @@ import {
 	MeasuringStrategy,
 	MouseSensor,
 	TouchSensor,
+	useDroppable,
 	useSensor,
 	useSensors,
 } from "@dnd-kit/core";
@@ -50,6 +51,7 @@ import { DashboardSidebarHoverProvider } from "./providers/DashboardSidebarHover
 import { DashboardSidebarPortsProvider } from "./providers/DashboardSidebarPortsProvider";
 import type { DashboardSidebarProject } from "./types";
 import { filterDashboardSidebarProjects } from "./utils/filterDashboardSidebarProjects";
+import { FOLDER_DROP_ROOT, parseFolderDropId } from "./utils/folderDnd";
 import { sortDashboardSidebarProjects } from "./utils/sortDashboardSidebarProjects";
 
 interface DashboardSidebarProps {
@@ -112,6 +114,32 @@ const SortableProjectWrapper = memo(function SortableProjectWrapper({
 		</div>
 	);
 });
+
+/**
+ * Drop target for the ungrouped list at the sidebar root, so a project can be
+ * dragged back out of a folder. While a drag is active it keeps a minimum
+ * height, otherwise an empty root would be an untargetable zero-height strip.
+ */
+function RootDropZone({
+	isDragging,
+	children,
+}: {
+	isDragging: boolean;
+	children: React.ReactNode;
+}) {
+	const { setNodeRef, isOver } = useDroppable({ id: FOLDER_DROP_ROOT });
+	return (
+		<div
+			ref={setNodeRef}
+			className={cn(
+				isDragging && "min-h-8 rounded-md transition-colors",
+				isDragging && isOver && "bg-fill-hover ring-1 ring-primary/50",
+			)}
+		>
+			{children}
+		</div>
+	);
+}
 
 export function DashboardSidebar({
 	isCollapsed = false,
@@ -307,8 +335,31 @@ export function DashboardSidebar({
 				return;
 			}
 			if (over && active.id !== over.id) {
-				const oldIndex = projectOrder.indexOf(String(active.id));
-				const newIndex = projectOrder.indexOf(String(over.id));
+				const activeId = String(active.id);
+				const overId = String(over.id);
+
+				// Dropped on a folder header (or the root zone): re-parent only —
+				// position within the destination is left to a follow-up drag.
+				const dropFolderId = parseFolderDropId(overId);
+				if (dropFolderId !== undefined) {
+					const current = groups.find((project) => project.id === activeId);
+					if (current && current.folderId !== dropFolderId) {
+						moveProjectToFolder(activeId, dropFolderId);
+					}
+					setActiveProject(null);
+					return;
+				}
+
+				// Dropped on another project: adopt that project's folder (so
+				// dragging into a folder's list joins it) and reorder.
+				const target = groups.find((project) => project.id === overId);
+				const dragged = groups.find((project) => project.id === activeId);
+				if (target && dragged && dragged.folderId !== target.folderId) {
+					moveProjectToFolder(activeId, target.folderId);
+				}
+
+				const oldIndex = projectOrder.indexOf(activeId);
+				const newIndex = projectOrder.indexOf(overId);
 				if (oldIndex !== -1 && newIndex !== -1) {
 					const reordered = arrayMove(projectOrder, oldIndex, newIndex);
 					setProjectOrder(reordered);
@@ -317,7 +368,13 @@ export function DashboardSidebar({
 			}
 			setActiveProject(null);
 		},
-		[isDragDisabled, projectOrder, reorderProjects],
+		[
+			isDragDisabled,
+			projectOrder,
+			reorderProjects,
+			groups,
+			moveProjectToFolder,
+		],
 	);
 
 	return (
@@ -403,19 +460,21 @@ export function DashboardSidebar({
 															))}
 													</div>
 												))}
-												{ungroupedProjects.map((project) => (
-													<SortableProjectWrapper
-														key={project.id}
-														project={project}
-														isCollapsed={isCollapsed}
-														isDraggingProject={activeProject != null}
-														isDragDisabled={isDragDisabled}
-														isInnerDragDisabled={isFilterActive}
-														workspaceShortcutLabels={workspaceShortcutLabels}
-														onWorkspaceHover={refreshWorkspacePullRequest}
-														onToggleCollapse={toggleProjectCollapsed}
-													/>
-												))}
+												<RootDropZone isDragging={activeProject != null}>
+													{ungroupedProjects.map((project) => (
+														<SortableProjectWrapper
+															key={project.id}
+															project={project}
+															isCollapsed={isCollapsed}
+															isDraggingProject={activeProject != null}
+															isDragDisabled={isDragDisabled}
+															isInnerDragDisabled={isFilterActive}
+															workspaceShortcutLabels={workspaceShortcutLabels}
+															onWorkspaceHover={refreshWorkspacePullRequest}
+															onToggleCollapse={toggleProjectCollapsed}
+														/>
+													))}
+												</RootDropZone>
 											</SortableContext>
 
 											{isFilterActive && displayedGroups.length === 0 && (
