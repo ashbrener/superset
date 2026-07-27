@@ -122,9 +122,16 @@ const SortableProjectWrapper = memo(function SortableProjectWrapper({
  */
 function RootDropZone({
 	isDragging,
+	showDivider,
 	children,
 }: {
 	isDragging: boolean;
+	/**
+	 * Rule above the ungrouped list. Folder contents are otherwise flush with
+	 * the projects that follow them, so there's no way to see where a folder
+	 * ends and the ungrouped projects begin.
+	 */
+	showDivider: boolean;
 	children: React.ReactNode;
 }) {
 	const { setNodeRef, isOver } = useDroppable({ id: FOLDER_DROP_ROOT });
@@ -132,6 +139,7 @@ function RootDropZone({
 		<div
 			ref={setNodeRef}
 			className={cn(
+				showDivider && "mt-2 border-t border-border/60 pt-2",
 				isDragging && "min-h-8 rounded-md transition-colors",
 				isDragging && isOver && "bg-fill-hover ring-1 ring-primary/50",
 			)}
@@ -460,7 +468,14 @@ export function DashboardSidebar({
 															))}
 													</div>
 												))}
-												<RootDropZone isDragging={activeProject != null}>
+												<RootDropZone
+													isDragging={activeProject != null}
+													showDivider={
+														!isCollapsed &&
+														folders.length > 0 &&
+														ungroupedProjects.length > 0
+													}
+												>
 													{ungroupedProjects.map((project) => (
 														<SortableProjectWrapper
 															key={project.id}
