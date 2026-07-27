@@ -147,6 +147,13 @@ export function DashboardSidebar({
 		[createFolder, moveProjectToFolder],
 	);
 
+	// "New folder" from the PROJECTS header: create an empty folder and drop
+	// straight into rename, so it can be created before any project exists.
+	const handleNewFolder = useCallback(() => {
+		const folderId = createFolder();
+		setAutoRenameFolderId(folderId);
+	}, [createFolder]);
+
 	const folderContextValue = useMemo(
 		() => ({ folders, moveProjectToFolder, createFolderForProject }),
 		[folders, moveProjectToFolder, createFolderForProject],
@@ -312,6 +319,7 @@ export function DashboardSidebar({
 										onSortModeChange={setSidebarProjectSortMode}
 										filterQuery={projectFilterQuery}
 										onFilterQueryChange={setProjectFilterQuery}
+										onNewFolder={handleNewFolder}
 									/>
 								)}
 

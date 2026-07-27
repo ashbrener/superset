@@ -2,6 +2,7 @@ import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@superset/ui/dropdown-menu";
 import { toast } from "@superset/ui/sonner";
@@ -10,6 +11,7 @@ import { cn } from "@superset/ui/utils";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { HiChevronRight } from "react-icons/hi2";
+import { LuFolderPlus } from "react-icons/lu";
 import {
 	VscFolderOpened,
 	VscGithubAlt,
@@ -32,6 +34,7 @@ interface DashboardSidebarWorkspacesHeaderProps {
 	onSortModeChange: (mode: SidebarProjectSortMode) => void;
 	filterQuery: string;
 	onFilterQueryChange: (query: string) => void;
+	onNewFolder: () => void;
 }
 
 export function DashboardSidebarWorkspacesHeader({
@@ -39,6 +42,7 @@ export function DashboardSidebarWorkspacesHeader({
 	onSortModeChange,
 	filterQuery,
 	onFilterQueryChange,
+	onNewFolder,
 }: DashboardSidebarWorkspacesHeaderProps) {
 	const isCollapsed = useSidebarWorkspacesCollapseStore((s) => s.isCollapsed);
 	const toggleCollapsed = useSidebarWorkspacesCollapseStore((s) => s.toggle);
@@ -153,6 +157,11 @@ export function DashboardSidebarWorkspacesHeader({
 					<DropdownMenuItem onSelect={() => openTemplateGallery()}>
 						<VscLayout className="size-4" />
 						Start from a template
+					</DropdownMenuItem>
+					<DropdownMenuSeparator />
+					<DropdownMenuItem onSelect={onNewFolder}>
+						<LuFolderPlus className="size-4" />
+						New folder
 					</DropdownMenuItem>
 				</DropdownMenuContent>
 			</DropdownMenu>
