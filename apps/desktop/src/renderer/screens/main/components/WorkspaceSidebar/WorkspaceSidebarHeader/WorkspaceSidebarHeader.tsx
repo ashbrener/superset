@@ -70,8 +70,8 @@ export function WorkspaceSidebarHeader({
 							className={cn(
 								"flex items-center justify-center size-8 rounded-md transition-colors",
 								isWorkspacesListOpen
-									? "text-foreground bg-accent"
-									: "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+									? "text-foreground bg-fill-selected"
+									: "text-muted-foreground hover:text-foreground hover:bg-fill-hover",
 							)}
 						>
 							<LuLayers className="size-4" strokeWidth={STROKE_WIDTH} />
@@ -88,8 +88,8 @@ export function WorkspaceSidebarHeader({
 							className={cn(
 								"flex items-center justify-center size-8 rounded-md transition-colors",
 								isTasksOpen
-									? "text-foreground bg-accent"
-									: "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+									? "text-foreground bg-fill-selected"
+									: "text-muted-foreground hover:text-foreground hover:bg-fill-hover",
 							)}
 						>
 							<HiOutlineClipboardDocumentList
@@ -107,15 +107,15 @@ export function WorkspaceSidebarHeader({
 	}
 
 	return (
-		<div className="flex flex-col gap-1 border-b border-border px-2 pt-2 pb-2">
+		<div className="flex flex-col border-b border-border px-2 pt-2 pb-2">
 			<button
 				type="button"
 				onClick={handleWorkspacesClick}
 				className={cn(
 					"flex items-center gap-2 px-2 py-1.5 w-full rounded-md transition-colors",
 					isWorkspacesListOpen
-						? "text-foreground bg-accent"
-						: "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+						? "text-foreground bg-fill-selected"
+						: "text-muted-foreground hover:text-foreground hover:bg-fill-hover",
 				)}
 			>
 				<div className="flex items-center justify-center size-5">
@@ -130,8 +130,8 @@ export function WorkspaceSidebarHeader({
 				className={cn(
 					"flex items-center gap-2 px-2 py-1.5 w-full rounded-md transition-colors",
 					isTasksOpen
-						? "text-foreground bg-accent"
-						: "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+						? "text-foreground bg-fill-selected"
+						: "text-muted-foreground hover:text-foreground hover:bg-fill-hover",
 				)}
 			>
 				<div className="flex items-center justify-center size-5">

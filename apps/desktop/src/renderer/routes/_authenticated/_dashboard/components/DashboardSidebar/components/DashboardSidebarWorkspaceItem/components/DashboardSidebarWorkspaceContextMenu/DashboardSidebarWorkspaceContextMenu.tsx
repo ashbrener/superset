@@ -22,21 +22,29 @@ import {
 	LuFolderPlus,
 	LuGitBranch,
 	LuPencil,
+	LuPin,
+	LuPinOff,
+	LuRadioTower,
 	LuTrash2,
 	LuX,
 } from "react-icons/lu";
 import { useHotkeyDisplay } from "renderer/hotkeys";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { useDashboardSidebarHover } from "../../../../providers/DashboardSidebarHoverProvider";
+import { useDashboardSidebarWorkspacePorts } from "../../../../providers/DashboardSidebarPortsProvider";
+import { useDashboardSidebarPortKill } from "../../../DashboardSidebarPortsList/hooks/useDashboardSidebarPortKill";
 
 interface DashboardSidebarWorkspaceContextMenuProps {
+	workspaceId: string;
 	projectId: string;
 	isInSection?: boolean;
 	isLocalWorkspace: boolean;
-	isPinned?: boolean;
+	isLocalMainWorkspace?: boolean;
+	isPinned: boolean;
 	isUnread: boolean;
 	hasStatus: boolean;
 	showDeleteHotkey?: boolean;
+	onTogglePin: () => void;
 	onCreateSection: () => void;
 	onMoveToSection: (sectionId: string | null) => void;
 	onOpenInFinder: () => void;
@@ -51,13 +59,16 @@ interface DashboardSidebarWorkspaceContextMenuProps {
 }
 
 export function DashboardSidebarWorkspaceContextMenu({
+	workspaceId,
 	projectId,
 	isInSection,
 	isLocalWorkspace,
-	isPinned = false,
+	isLocalMainWorkspace = false,
+	isPinned,
 	isUnread,
 	hasStatus,
 	showDeleteHotkey = false,
+	onTogglePin,
 	onCreateSection,
 	onMoveToSection,
 	onOpenInFinder,
@@ -72,6 +83,10 @@ export function DashboardSidebarWorkspaceContextMenu({
 }: DashboardSidebarWorkspaceContextMenuProps) {
 	const collections = useCollections();
 	const { setContextMenuOpen } = useDashboardSidebarHover();
+	const portGroup = useDashboardSidebarWorkspacePorts(workspaceId);
+	const { isPending: isKillingPorts, killPorts } =
+		useDashboardSidebarPortKill();
+	const ports = portGroup?.ports ?? [];
 	const deleteHotkeyText = useHotkeyDisplay("CLOSE_WORKSPACE").text;
 	const showDeleteShortcut =
 		showDeleteHotkey && deleteHotkeyText !== "Unassigned";
@@ -90,11 +105,29 @@ export function DashboardSidebarWorkspaceContextMenu({
 				})),
 		[collections, projectId],
 	);
+	const handleCloseAllPorts = () => {
+		if (isKillingPorts) return;
+		void killPorts(ports);
+	};
 
 	return (
 		<ContextMenu onOpenChange={setContextMenuOpen}>
 			<ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
 			<ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
+				<ContextMenuItem onSelect={onTogglePin}>
+					{isPinned ? (
+						<>
+							<LuPinOff className="size-4 mr-2" />
+							Unpin
+						</>
+					) : (
+						<>
+							<LuPin className="size-4 mr-2" />
+							Pin
+						</>
+					)}
+				</ContextMenuItem>
+				<ContextMenuSeparator />
 				{onRename && (
 					<ContextMenuItem onSelect={onRename}>
 						<LuPencil className="size-4 mr-2" />
@@ -139,7 +172,9 @@ export function DashboardSidebarWorkspaceContextMenu({
 						Clear Status
 					</ContextMenuItem>
 				)}
-				{!isPinned && (
+				{/* Group actions mutate placement (sectionId/tabOrder), which a pinned
+				    row doesn't display — the change would only surface on unpin. */}
+				{!isPinned && !isLocalMainWorkspace && (
 					<>
 						<ContextMenuSeparator />
 						<ContextMenuItem onSelect={onCreateSection}>
@@ -180,6 +215,16 @@ export function DashboardSidebarWorkspaceContextMenu({
 					</>
 				)}
 				<ContextMenuSeparator />
+				{ports.length > 0 && (
+					<ContextMenuItem
+						onSelect={handleCloseAllPorts}
+						disabled={isKillingPorts}
+						variant="destructive"
+					>
+						<LuRadioTower className="size-4 mr-2" />
+						Close all ports
+					</ContextMenuItem>
+				)}
 				<ContextMenuItem
 					onSelect={onRemoveFromSidebar}
 					className="text-destructive focus:text-destructive"

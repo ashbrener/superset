@@ -4,6 +4,7 @@ import { settings } from "@superset/local-db";
 import { app, dialog, Notification, net, protocol, session } from "electron";
 import { makeAppSetup } from "lib/electron-app/factories/app/setup";
 import {
+	authEvents,
 	handleAuthCallback,
 	loadToken,
 	parseAuthDeepLink,
@@ -406,6 +407,24 @@ if (!gotTheLock) {
 		// Must happen before renderer restore runs
 		await reconcileDaemonSessions();
 		prewarmTerminalRuntime();
+
+		// Host services for previously-hosted orgs start from main, so
+		// background reachability and port detection never wait on a renderer
+		// or cloud sync. Non-blocking: boot must not wait on spawns.
+		const startKnownHostServices = async () => {
+			try {
+				const { token } = await loadToken();
+				if (!token) return;
+				await getHostServiceCoordinator().startAllKnown({
+					authToken: token,
+					cloudApiUrl: mainEnv.NEXT_PUBLIC_API_URL,
+				});
+			} catch (error) {
+				console.error("[main] host-service boot reconcile failed:", error);
+			}
+		};
+		void startKnownHostServices();
+		authEvents.on("token-saved", () => void startKnownHostServices());
 
 		try {
 			setupAgentHooks();

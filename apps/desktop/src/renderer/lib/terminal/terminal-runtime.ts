@@ -1,3 +1,4 @@
+import { installTerminalWheelEventHandler } from "@superset/shared/terminal-wheel-handler";
 import { FitAddon } from "@xterm/addon-fit";
 import type { ProgressAddon } from "@xterm/addon-progress";
 import type { SearchAddon } from "@xterm/addon-search";
@@ -20,6 +21,7 @@ import { loadAddons } from "./terminal-addons";
 import { installImagePasteFallback } from "./terminal-image-paste-fallback";
 import { installTerminalKeyEventHandler } from "./terminal-key-event-handler";
 import { getTerminalParkingContainer } from "./terminal-parking";
+import { installInputModeReclaimer } from "./terminalInputModeReclaimer";
 
 const SERIALIZE_SCROLLBACK = 1000;
 const STORAGE_KEY_PREFIX = "terminal-buffer:";
@@ -43,6 +45,8 @@ export interface TerminalRuntime {
 	lastCols: number;
 	lastRows: number;
 	_disposeAddons: (() => void) | null;
+	_setLigaturesEnabled: ((enabled: boolean) => void) | null;
+	ligaturesEnabled: boolean;
 	_disposeImagePasteFallback: (() => void) | null;
 }
 
@@ -60,28 +64,42 @@ function createTerminal(
 	const terminal = new XTerm({
 		cols,
 		rows,
-		cursorBlink: true,
+		cursorBlink: appearance.cursorBlink,
 		fontFamily: appearance.fontFamily,
 		fontSize: appearance.fontSize,
+		lineHeight: appearance.lineHeight,
+		letterSpacing: appearance.letterSpacing,
+		fontWeight: appearance.fontWeight,
+		minimumContrastRatio: appearance.minimumContrastRatio,
 		theme: appearance.theme,
 		allowProposedApi: true,
 		scrollback: DEFAULT_TERMINAL_SCROLLBACK,
 		macOptionIsMeta: false,
-		cursorStyle: "block",
+		cursorStyle: appearance.cursorStyle,
 		cursorInactiveStyle: "outline",
 		vtExtensions: { kittyKeyboard: true },
 		scrollbar: { showScrollbar: false },
 	});
 	terminal.loadAddon(fitAddon);
 	terminal.loadAddon(serializeAddon);
+	// Disarm TUI-only input modes (kitty keyboard / mouse / focus) leaked into a
+	// live shell prompt by a TUI killed while attached (#4949). The parser
+	// handlers are owned by the terminal and cleaned up on terminal.dispose().
+	installInputModeReclaimer(terminal);
 	return { terminal, fitAddon, serializeAddon };
 }
 
-function persistBuffer(terminalId: string, serializeAddon: SerializeAddon) {
+function persistBuffer(
+	terminalId: string,
+	serializeAddon: SerializeAddon,
+): boolean {
 	try {
 		const data = serializeAddon.serialize({ scrollback: SERIALIZE_SCROLLBACK });
 		localStorage.setItem(`${STORAGE_KEY_PREFIX}${terminalId}`, data);
-	} catch {}
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 function restoreBuffer(terminalId: string, terminal: XTerm) {
@@ -91,19 +109,41 @@ function restoreBuffer(terminalId: string, terminal: XTerm) {
 	} catch {}
 }
 
+/**
+ * Persist buffer + dims, reporting success. Eviction must not proceed when
+ * either write fails or the runtime could not be restored faithfully.
+ */
+export function tryPersistRuntimeState(runtime: TerminalRuntime): boolean {
+	if (!persistBuffer(runtime.terminalId, runtime.serializeAddon)) {
+		return false;
+	}
+	return persistDimensions(
+		runtime.terminalId,
+		runtime.lastCols,
+		runtime.lastRows,
+	);
+}
+
 function clearPersistedBuffer(terminalId: string) {
 	try {
 		localStorage.removeItem(`${STORAGE_KEY_PREFIX}${terminalId}`);
 	} catch {}
 }
 
-function persistDimensions(terminalId: string, cols: number, rows: number) {
+function persistDimensions(
+	terminalId: string,
+	cols: number,
+	rows: number,
+): boolean {
 	try {
 		localStorage.setItem(
 			`${DIMS_KEY_PREFIX}${terminalId}`,
 			JSON.stringify({ cols, rows }),
 		);
-	} catch {}
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 function loadSavedDimensions(
@@ -128,6 +168,12 @@ function clearPersistedDimensions(terminalId: string) {
 	} catch {}
 }
 
+/** Clear persisted renderer state even when no live runtime entry remains. */
+export function clearPersistedRuntimeState(terminalId: string): void {
+	clearPersistedBuffer(terminalId);
+	clearPersistedDimensions(terminalId);
+}
+
 function hostIsVisible(container: HTMLDivElement | null): boolean {
 	if (!container) return false;
 	return container.clientWidth > 0 && container.clientHeight > 0;
@@ -136,6 +182,7 @@ function hostIsVisible(container: HTMLDivElement | null): boolean {
 function measureAndResize(
 	runtime: TerminalRuntime,
 	onResize?: () => void,
+	options: { forceNotify?: boolean } = {},
 ): void {
 	if (!hostIsVisible(runtime.container)) return;
 	const { terminal } = runtime;
@@ -164,7 +211,11 @@ function measureAndResize(
 
 		terminal.refresh(0, Math.max(0, terminal.rows - 1));
 
-		if (terminal.cols !== prevCols || terminal.rows !== prevRows) {
+		if (
+			options.forceNotify ||
+			terminal.cols !== prevCols ||
+			terminal.rows !== prevRows
+		) {
 			onResize?.();
 		}
 	});
@@ -188,7 +239,10 @@ function createResizeScheduler(
 
 	const run = () => {
 		timeoutId = null;
-		measureAndResize(runtime, onResize);
+		// Notify unconditionally (VS Code parity): a reveal after a zero-size
+		// hide re-sends PTY dims even when unchanged, resyncing a PTY resized
+		// elsewhere meanwhile. Same-size re-sends are kernel no-ops.
+		measureAndResize(runtime, onResize, { forceNotify: true });
 	};
 
 	const observe: ResizeObserverCallback = (entries) => {
@@ -233,10 +287,13 @@ export function createRuntime(
 	terminal.open(wrapper);
 
 	installTerminalKeyEventHandler(terminal);
+	installTerminalWheelEventHandler(terminal);
 
 	// Activate Unicode 11 widths (inside loadAddons) before restoring the buffer,
 	// else CJK/emoji/ZWJ widths get baked wrong into the replay. (#3572)
-	const addonsResult = loadAddons(terminal);
+	const addonsResult = loadAddons(terminal, {
+		ligatures: appearance.ligatures,
+	});
 	if (options.initialBuffer !== undefined) {
 		terminal.write(options.initialBuffer);
 	} else {
@@ -263,6 +320,8 @@ export function createRuntime(
 		lastCols: cols,
 		lastRows: rows,
 		_disposeAddons: addonsResult.dispose,
+		_setLigaturesEnabled: addonsResult.setLigaturesEnabled,
+		ligaturesEnabled: appearance.ligatures,
 		_disposeImagePasteFallback: disposeImagePasteFallback,
 	};
 }
@@ -328,15 +387,18 @@ export function updateRuntimeAppearance(
 	const { terminal } = runtime;
 	terminal.options.theme = appearance.theme;
 
-	const fontChanged =
-		terminal.options.fontFamily !== appearance.fontFamily ||
-		terminal.options.fontSize !== appearance.fontSize;
+	const measurementsChanged = terminalMeasurementsChanged(runtime, appearance);
+	runtime._setLigaturesEnabled?.(appearance.ligatures);
+	runtime.ligaturesEnabled = appearance.ligatures;
 
-	if (fontChanged) {
+	if (measurementsChanged) {
 		applyTerminalFontFamilyCssVariable(runtime.wrapper, appearance.fontFamily);
 		terminal.options.fontFamily = appearance.fontFamily;
 		terminal.options.fontSize = appearance.fontSize;
-		measureAndResize(runtime, onResize);
+		terminal.options.lineHeight = appearance.lineHeight;
+		terminal.options.letterSpacing = appearance.letterSpacing;
+		terminal.options.fontWeight = appearance.fontWeight;
+		measureAndResize(runtime, onResize, { forceNotify: true });
 		// The freshly-selected font may still be loading — schedule a follow-up
 		// refit once it resolves so dimensions track the rendered glyphs.
 		scheduleFontSettleRefit(
@@ -345,21 +407,42 @@ export function updateRuntimeAppearance(
 			() => measureAndResize(runtime, onResize),
 		);
 	}
+
+	terminal.options.minimumContrastRatio = appearance.minimumContrastRatio;
+	terminal.options.cursorStyle = appearance.cursorStyle;
+	terminal.options.cursorBlink = appearance.cursorBlink;
+	if (!measurementsChanged) {
+		terminal.refresh(0, Math.max(0, terminal.rows - 1));
+	}
+}
+
+export function terminalMeasurementsChanged(
+	runtime: Pick<TerminalRuntime, "terminal" | "ligaturesEnabled">,
+	appearance: TerminalAppearance,
+): boolean {
+	const { terminal } = runtime;
+	return (
+		terminal.options.fontFamily !== appearance.fontFamily ||
+		terminal.options.fontSize !== appearance.fontSize ||
+		terminal.options.lineHeight !== appearance.lineHeight ||
+		terminal.options.letterSpacing !== appearance.letterSpacing ||
+		terminal.options.fontWeight !== appearance.fontWeight ||
+		runtime.ligaturesEnabled !== appearance.ligatures
+	);
 }
 
 export function disposeRuntime(
 	runtime: TerminalRuntime,
-	options: { clearPersistedState?: boolean } = {},
+	options: {
+		persistedState?: "clear" | "preserve";
+	} = {},
 ) {
-	const clearPersistedState = options.clearPersistedState ?? true;
-	if (!clearPersistedState) {
-		persistBuffer(runtime.terminalId, runtime.serializeAddon);
-		persistDimensions(runtime.terminalId, runtime.lastCols, runtime.lastRows);
-	}
+	const persistedState = options.persistedState ?? "clear";
 	runtime._disposeImagePasteFallback?.();
 	runtime._disposeImagePasteFallback = null;
 	runtime._disposeAddons?.();
 	runtime._disposeAddons = null;
+	runtime._setLigaturesEnabled = null;
 	runtime._disposeResizeObserver?.();
 	runtime._disposeResizeObserver = null;
 	runtime.resizeObserver?.disconnect();
@@ -368,8 +451,7 @@ export function disposeRuntime(
 	runtime.container = null;
 	runtime.wrapper.remove();
 	runtime.terminal.dispose();
-	if (clearPersistedState) {
-		clearPersistedBuffer(runtime.terminalId);
-		clearPersistedDimensions(runtime.terminalId);
+	if (persistedState === "clear") {
+		clearPersistedRuntimeState(runtime.terminalId);
 	}
 }

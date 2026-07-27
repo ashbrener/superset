@@ -22,6 +22,11 @@ export const DESKTOP_AGENT_SETUP_ACTIONS = [
 	"gemini-hook-script",
 	"gemini-wrapper",
 	"gemini-settings-json",
+	"kimi-config-toml",
+	"kimi-wrapper",
+	"grok-hooks-json",
+	"grok-config-toml",
+	"grok-wrapper",
 	"mastra-wrapper",
 	"mastra-hooks-json",
 	"copilot-hook-script",
@@ -94,6 +99,16 @@ export const DESKTOP_AGENT_SETUP_TARGETS = [
 	{
 		id: "mastracode",
 		setupActions: ["mastra-wrapper", "mastra-hooks-json"],
+		managedBinary: true,
+	},
+	{
+		id: "kimi",
+		setupActions: ["kimi-config-toml", "kimi-wrapper"],
+		managedBinary: true,
+	},
+	{
+		id: "grok",
+		setupActions: ["grok-hooks-json", "grok-config-toml", "grok-wrapper"],
 		managedBinary: true,
 	},
 	{

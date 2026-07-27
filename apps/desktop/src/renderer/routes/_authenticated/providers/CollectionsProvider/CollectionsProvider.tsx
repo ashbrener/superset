@@ -13,7 +13,11 @@ import { authClient } from "renderer/lib/auth-client";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { electronTrpcClient } from "renderer/lib/trpc-client";
 import { MOCK_ORG_ID } from "shared/constants";
-import { getCollections, preloadCollections } from "./collections";
+import {
+	evictInactiveOrgCollections,
+	getCollections,
+	preloadCollections,
+} from "./collections";
 
 type CollectionsContextType = ReturnType<typeof getCollections> & {
 	activeOrganizationId: string;
@@ -114,6 +118,14 @@ export function CollectionsProvider({ children }: { children: ReactNode }) {
 
 	useEffect(() => {
 		preloadActiveOrganizationCollections(activeOrganizationId);
+		// Once the active org is current (its collections are already cached by the
+		// `collections` memo above, which runs during render), evict every prior
+		// org's set to free the synced tables they hold. This effect is the single
+		// trigger for all switch paths, including callers that set the active org
+		// directly without going through `switchOrganization`.
+		if (activeOrganizationId) {
+			evictInactiveOrgCollections(activeOrganizationId);
+		}
 	}, [activeOrganizationId]);
 
 	const collections = useMemo(
