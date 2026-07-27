@@ -53,8 +53,10 @@ import { refreshJwtAfterUnauthorized } from "renderer/lib/jwt-refresh";
 import superjson from "superjson";
 import { z } from "zod";
 import {
+	type DashboardSidebarFolderRow,
 	type DashboardSidebarProjectRow,
 	type DashboardSidebarSectionRow,
+	dashboardSidebarFolderSchema,
 	dashboardSidebarProjectSchema,
 	dashboardSidebarSectionSchema,
 	type FailedWorkspaceCreateRow,
@@ -167,6 +169,13 @@ export interface OrgCollections {
 		LocalStorageCollectionUtils,
 		typeof dashboardSidebarProjectSchema,
 		z.input<typeof dashboardSidebarProjectSchema>
+	>;
+	v2SidebarFolders: Collection<
+		DashboardSidebarFolderRow,
+		string,
+		LocalStorageCollectionUtils,
+		typeof dashboardSidebarFolderSchema,
+		z.input<typeof dashboardSidebarFolderSchema>
 	>;
 	v2WorkspaceLocalState: Collection<
 		WorkspaceLocalStateRow,
@@ -756,6 +765,20 @@ function createOrgCollections(organizationId: string): OrgCollections {
 		(sidebarProject) => sidebarProject.tabOrder,
 		basicIndexConfig,
 	);
+	v2SidebarProjects.createIndex(
+		(sidebarProject) => sidebarProject.folderId,
+		basicIndexConfig,
+	);
+
+	const v2SidebarFolders = createIndexedCollection(
+		localStorageCollectionOptions({
+			id: `v2_sidebar_folders-${organizationId}`,
+			storageKey: `v2-sidebar-folders-${organizationId}`,
+			schema: dashboardSidebarFolderSchema,
+			getKey: (item) => item.folderId,
+		}),
+	);
+	v2SidebarFolders.createIndex((folder) => folder.tabOrder, basicIndexConfig);
 
 	const v2WorkspaceLocalState = createIndexedCollection(
 		localStorageCollectionOptions(
@@ -862,6 +885,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 		automations,
 		automationRuns,
 		v2SidebarProjects,
+		v2SidebarFolders,
 		v2WorkspaceLocalState,
 		v2SidebarSections,
 		v2TerminalPresets,

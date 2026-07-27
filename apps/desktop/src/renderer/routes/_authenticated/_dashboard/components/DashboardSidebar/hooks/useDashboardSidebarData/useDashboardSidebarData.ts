@@ -186,6 +186,23 @@ export function useDashboardSidebarData() {
 				.select(({ sidebarProjects }) => ({
 					projectId: sidebarProjects.projectId,
 					isCollapsed: sidebarProjects.isCollapsed,
+					folderId: sidebarProjects.folderId,
+				})),
+		[collections],
+	);
+
+	// Folders group projects at the sidebar root (the level above projects).
+	const { data: sidebarFolders = [] } = useLiveQuery(
+		(q) =>
+			q
+				.from({ folders: collections.v2SidebarFolders })
+				.orderBy(({ folders }) => folders.tabOrder, "asc")
+				.select(({ folders }) => ({
+					id: folders.folderId,
+					name: folders.name,
+					isCollapsed: folders.isCollapsed,
+					tabOrder: folders.tabOrder,
+					color: folders.color,
 				})),
 		[collections],
 	);
@@ -213,6 +230,7 @@ export function useDashboardSidebarData() {
 					createdAt: new Date(project.createdAt),
 					updatedAt: new Date(project.updatedAt),
 					isCollapsed: row.isCollapsed,
+					folderId: row.folderId,
 				},
 			];
 		});
@@ -463,6 +481,7 @@ export function useDashboardSidebarData() {
 
 	return {
 		groups,
+		folders: sidebarFolders,
 		pinnedWorkspaces,
 		refreshWorkspacePullRequest,
 		toggleProjectCollapsed,

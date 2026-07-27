@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useMemo } from "react";
 import type { DashboardSidebarProject } from "../../types";
 import { getProjectChildrenWorkspaces } from "../../utils/projectChildren";
+import { useDashboardSidebarFolders } from "../DashboardSidebarFolderContext";
 import { DashboardSidebarCollapsedProjectContent } from "./components/DashboardSidebarCollapsedProjectContent";
 import { DashboardSidebarExpandedProjectContent } from "./components/DashboardSidebarExpandedProjectContent";
 import { DashboardSidebarProjectContextMenu } from "./components/DashboardSidebarProjectContextMenu";
@@ -59,6 +60,9 @@ export function DashboardSidebarProjectSection({
 		project,
 	});
 
+	const { folders, moveProjectToFolder, createFolderForProject } =
+		useDashboardSidebarFolders();
+
 	const totalWorkspaceCount = flattenedCollapsedWorkspaces.length;
 
 	if (isSidebarCollapsed) {
@@ -69,6 +73,10 @@ export function DashboardSidebarProjectSection({
 				onOpenSettings={handleOpenSettings}
 				onRemoveFromSidebar={confirmRemoveFromSidebar}
 				onRename={startRename}
+				folders={folders}
+				currentFolderId={project.folderId}
+				onMoveToFolder={(folderId) => moveProjectToFolder(project.id, folderId)}
+				onCreateFolderWithProject={() => createFolderForProject(project.id)}
 			>
 				<div className="mt-1 first:mt-0">
 					<DashboardSidebarCollapsedProjectContent
@@ -95,6 +103,10 @@ export function DashboardSidebarProjectSection({
 				onOpenSettings={handleOpenSettings}
 				onRemoveFromSidebar={confirmRemoveFromSidebar}
 				onRename={startRename}
+				folders={folders}
+				currentFolderId={project.folderId}
+				onMoveToFolder={(folderId) => moveProjectToFolder(project.id, folderId)}
+				onCreateFolderWithProject={() => createFolderForProject(project.id)}
 			>
 				<DashboardSidebarProjectRow
 					projectName={project.name}
