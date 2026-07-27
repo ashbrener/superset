@@ -249,6 +249,22 @@ export function DashboardSidebar({
 		[displayedGroups, folderIds],
 	);
 
+	// dnd-kit requires the SortableContext item order to match the rendered
+	// order, so build it exactly as the list below renders: each folder's
+	// projects (skipped while that folder is collapsed and therefore not
+	// mounted), then the ungrouped ones.
+	const sortableProjectIds = useMemo(
+		() => [
+			...foldersWithProjects.flatMap(({ folder, projects }) =>
+				isCollapsed || !folder.isCollapsed
+					? projects.map((project) => project.id)
+					: [],
+			),
+			...ungroupedProjects.map((project) => project.id),
+		],
+		[foldersWithProjects, ungroupedProjects, isCollapsed],
+	);
+
 	const isFilterActive = projectFilterQuery.trim() !== "";
 	const isDragDisabled = sortMode !== "manual" || isFilterActive;
 
@@ -350,7 +366,7 @@ export function DashboardSidebar({
 											onDragCancel={() => setActiveProject(null)}
 										>
 											<SortableContext
-												items={displayedGroups.map((project) => project.id)}
+												items={sortableProjectIds}
 												strategy={verticalListSortingStrategy}
 											>
 												{foldersWithProjects.map(({ folder, projects }) => (
@@ -360,6 +376,9 @@ export function DashboardSidebar({
 																folder={folder}
 																projectCount={projects.length}
 																autoRename={autoRenameFolderId === folder.id}
+																onAutoRenameEnd={() =>
+																	setAutoRenameFolderId(null)
+																}
 																onToggleCollapse={toggleFolderCollapsed}
 																onRename={renameFolder}
 																onSetColor={setFolderColor}

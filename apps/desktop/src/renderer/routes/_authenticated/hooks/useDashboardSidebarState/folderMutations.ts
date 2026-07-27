@@ -32,7 +32,10 @@ export function createFolderInState(
 	collections: FolderCollections,
 	options: { name?: string } = {},
 ): string {
-	const { name = DEFAULT_FOLDER_NAME } = options;
+	// Mirror renameFolderInState: fall back rather than letting a blank name
+	// fail the schema's `.min(1)` at insert time.
+	const trimmed = options.name?.trim();
+	const name = trimmed ? trimmed : DEFAULT_FOLDER_NAME;
 	const folderId = crypto.randomUUID();
 
 	collections.v2SidebarFolders.insert({

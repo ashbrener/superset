@@ -101,6 +101,19 @@ describe("folder mutations", () => {
 		expect(collections.v2SidebarFolders.get(folderId)?.name).toBe("New folder");
 	});
 
+	it("falls back to the default name when given a blank one", () => {
+		const collections = makeCollections();
+		// A whitespace-only name would fail the schema's .min(1) at insert.
+		const folderId = createFolderInState(collections, { name: "   " });
+		expect(collections.v2SidebarFolders.get(folderId)?.name).toBe("New folder");
+	});
+
+	it("trims the name on create", () => {
+		const collections = makeCollections();
+		const folderId = createFolderInState(collections, { name: "  Work  " });
+		expect(collections.v2SidebarFolders.get(folderId)?.name).toBe("Work");
+	});
+
 	it("renames a folder and trims whitespace", () => {
 		const collections = makeCollections();
 		const folderId = createFolderInState(collections, { name: "Old" });

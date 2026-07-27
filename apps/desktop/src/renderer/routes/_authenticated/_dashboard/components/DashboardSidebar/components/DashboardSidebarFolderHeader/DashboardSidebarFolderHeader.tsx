@@ -37,6 +37,9 @@ interface DashboardSidebarFolderHeaderProps {
 	projectCount: number;
 	/** Auto-enter rename mode (used right after the folder is created). */
 	autoRename?: boolean;
+	/** Called once an auto-initiated rename is committed or cancelled, so the
+	 * caller can clear its pending flag and not re-open rename on remount. */
+	onAutoRenameEnd?: () => void;
 	onToggleCollapse: (folderId: string) => void;
 	onRename: (folderId: string, name: string) => void;
 	onSetColor: (folderId: string, color: string | null) => void;
@@ -52,6 +55,7 @@ export function DashboardSidebarFolderHeader({
 	folder,
 	projectCount,
 	autoRename = false,
+	onAutoRenameEnd,
 	onToggleCollapse,
 	onRename,
 	onSetColor,
@@ -73,12 +77,14 @@ export function DashboardSidebarFolderHeader({
 		const trimmed = renameValue.trim();
 		if (trimmed) onRename(folder.id, trimmed);
 		setIsRenaming(false);
-	}, [folder.id, onRename, renameValue]);
+		onAutoRenameEnd?.();
+	}, [folder.id, onRename, renameValue, onAutoRenameEnd]);
 
 	const cancelRename = useCallback(() => {
 		setRenameValue(folder.name);
 		setIsRenaming(false);
-	}, [folder.name]);
+		onAutoRenameEnd?.();
+	}, [folder.name, onAutoRenameEnd]);
 
 	const hasColor =
 		folder.color != null && folder.color !== PROJECT_COLOR_DEFAULT;
