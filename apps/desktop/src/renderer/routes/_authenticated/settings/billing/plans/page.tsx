@@ -216,7 +216,9 @@ function PlansPage() {
 	const openUrl = electronTrpc.external.openUrl.useMutation();
 	const collections = useCollections();
 
-	const activeOrgId = session?.session?.activeOrganizationId;
+	// Per-window org: the shared session holds one org for the whole app, so
+	// a second window on another org would render the first window's org here.
+	const activeOrgId = collections.activeOrganizationId;
 
 	// Get subscription from Electric (preloaded, instant)
 	const { data: subscriptionsData } = useLiveQuery(

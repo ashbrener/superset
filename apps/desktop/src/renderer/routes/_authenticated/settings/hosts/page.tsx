@@ -18,7 +18,7 @@ function HostsIndexPage() {
 
 	const activeOrganizationId = env.SKIP_ENV_VALIDATION
 		? MOCK_ORG_ID
-		: (session?.session?.activeOrganizationId ?? null);
+		: (collections.activeOrganizationId ?? null);
 
 	const { data: hosts = [], isReady } = useLiveQuery(
 		(q) =>
