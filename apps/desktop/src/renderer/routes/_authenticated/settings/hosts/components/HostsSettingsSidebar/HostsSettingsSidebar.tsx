@@ -4,7 +4,6 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { env } from "renderer/env.renderer";
-import { authClient } from "renderer/lib/auth-client";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { MOCK_ORG_ID } from "shared/constants";
 import {
@@ -28,7 +27,6 @@ export function HostsSettingsSidebar({
 	selectedHostId,
 }: HostsSettingsSidebarProps) {
 	const collections = useCollections();
-	const { data: session } = authClient.useSession();
 
 	const activeOrganizationId = env.SKIP_ENV_VALIDATION
 		? MOCK_ORG_ID

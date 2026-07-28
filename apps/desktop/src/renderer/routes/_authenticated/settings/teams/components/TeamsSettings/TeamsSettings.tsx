@@ -9,12 +9,10 @@ import {
 } from "@superset/ui/table";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useNavigate } from "@tanstack/react-router";
-import { authClient } from "renderer/lib/auth-client";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { CreateTeamButton } from "./components/CreateTeamButton";
 
 export function TeamsSettings() {
-	const { data: session } = authClient.useSession();
 	const collections = useCollections();
 	const navigate = useNavigate();
 	// Per-window org: the shared session holds one org for the whole app, so
