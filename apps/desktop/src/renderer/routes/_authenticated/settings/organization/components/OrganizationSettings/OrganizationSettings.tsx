@@ -74,8 +74,10 @@ export function OrganizationSettings({
 	visibleItems,
 }: OrganizationSettingsProps) {
 	const { data: session } = authClient.useSession();
-	const activeOrganizationId = session?.session?.activeOrganizationId;
 	const collections = useCollections();
+	// Per-window org: the shared session holds one org for the whole app, so a
+	// second window on another org would render the first window's org here.
+	const activeOrganizationId = collections.activeOrganizationId;
 
 	const [isSlugDialogOpen, setIsSlugDialogOpen] = useState(false);
 	const [logoPreview, setLogoPreview] = useState<string | null>(null);
@@ -90,12 +92,7 @@ export function OrganizationSettings({
 		(o) => o.id === activeOrganizationId,
 	);
 
-	const { data: activeOrg } = authClient.useActiveOrganization();
 	const currentUserId = session?.user?.id;
-	const currentMember = activeOrg?.members?.find(
-		(m) => m.userId === currentUserId,
-	);
-	const isOwner = currentMember?.role === "owner";
 
 	const selectImageMutation = electronTrpc.window.selectImageFile.useMutation();
 
@@ -149,6 +146,10 @@ export function OrganizationSettings({
 	const ownerCount = members.filter((m) => m.role === "owner").length;
 	const currentMemberFromData = members.find((m) => m.userId === currentUserId);
 	const currentUserRole = currentMemberFromData?.role;
+	// Ownership is read from this window's members collection. The session's
+	// active organization is shared by every window, so a second window on
+	// another org would grant or deny owner actions against the wrong one.
+	const isOwner = currentUserRole === "owner";
 
 	const formatDate = (date: Date | string) => {
 		const d = date instanceof Date ? date : new Date(date);
