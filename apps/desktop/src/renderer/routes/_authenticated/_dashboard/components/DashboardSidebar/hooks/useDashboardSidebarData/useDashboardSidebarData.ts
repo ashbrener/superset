@@ -1,6 +1,7 @@
 import { useLiveQuery } from "@tanstack/react-db";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef } from "react";
+import { resolveProjectIconUrl } from "renderer/hooks/host-projects/resolveProjectIconUrl";
 import { useHostProjects } from "renderer/hooks/host-projects/useHostProjects";
 import { useRelayUrl } from "renderer/hooks/useRelayUrl";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
@@ -182,10 +183,10 @@ export function useDashboardSidebarData() {
 		(q) =>
 			q
 				.from({ sidebarProjects: collections.v2SidebarProjects })
-				.orderBy(({ sidebarProjects }) => sidebarProjects.tabOrder, "asc")
 				.select(({ sidebarProjects }) => ({
 					projectId: sidebarProjects.projectId,
 					isCollapsed: sidebarProjects.isCollapsed,
+					tabOrder: sidebarProjects.tabOrder,
 					folderId: sidebarProjects.folderId,
 				})),
 		[collections],
@@ -206,6 +207,21 @@ export function useDashboardSidebarData() {
 				})),
 		[collections],
 	);
+	// Sorted in JS, not via the query's orderBy: the incremental orderBy
+	// does not reliably re-sort on row inserts/renumbers (a newly added
+	// project stayed appended at the bottom until reload), and tabOrders
+	// can collide (bulk ensure paths mint duplicates) so ties need a
+	// stable secondary key. Workspaces/sections don't need this — the
+	// project-tree builder re-sorts them by tabOrder itself.
+	const orderedSidebarProjectRows = useMemo(
+		() =>
+			[...sidebarProjectRows].sort(
+				(left, right) =>
+					left.tabOrder - right.tabOrder ||
+					left.projectId.localeCompare(right.projectId),
+			),
+		[sidebarProjectRows],
+	);
 
 	const { projects: hostProjects } = useHostProjects();
 
@@ -213,7 +229,7 @@ export function useDashboardSidebarData() {
 		const projectsByKey = new Map(
 			hostProjects.map((project) => [project.projectKey, project]),
 		);
-		return sidebarProjectRows.flatMap((row) => {
+		return orderedSidebarProjectRows.flatMap((row) => {
 			const project = projectsByKey.get(row.projectId);
 			// No host serves it: stale placement row (deleted project) — drop
 			// it, same as the old inner join did.
@@ -224,9 +240,7 @@ export function useDashboardSidebarData() {
 					name: project.name,
 					githubOwner: project.repoOwner,
 					githubRepoName: project.repoName,
-					iconUrl: project.repoOwner
-						? `https://github.com/${project.repoOwner}.png?size=64`
-						: null,
+					iconUrl: resolveProjectIconUrl(project),
 					createdAt: new Date(project.createdAt),
 					updatedAt: new Date(project.updatedAt),
 					isCollapsed: row.isCollapsed,
@@ -234,13 +248,15 @@ export function useDashboardSidebarData() {
 				},
 			];
 		});
-	}, [sidebarProjectRows, hostProjects]);
+	}, [orderedSidebarProjectRows, hostProjects]);
 
 	const { data: sidebarSections = [] } = useLiveQuery(
 		(q) =>
 			q
 				.from({ sidebarSections: collections.v2SidebarSections })
+				// Same tie-breaking rationale as the projects query above.
 				.orderBy(({ sidebarSections }) => sidebarSections.tabOrder, "asc")
+				.orderBy(({ sidebarSections }) => sidebarSections.sectionId, "asc")
 				.select(({ sidebarSections }) => ({
 					id: sidebarSections.sectionId,
 					projectId: sidebarSections.projectId,
@@ -263,8 +279,13 @@ export function useDashboardSidebarData() {
 		(q) =>
 			q
 				.from({ sidebarWorkspaces: collections.v2WorkspaceLocalState })
+				// Same tie-breaking rationale as the projects query above.
 				.orderBy(
 					({ sidebarWorkspaces }) => sidebarWorkspaces.sidebarState.tabOrder,
+					"asc",
+				)
+				.orderBy(
+					({ sidebarWorkspaces }) => sidebarWorkspaces.workspaceId,
 					"asc",
 				)
 				.select(({ sidebarWorkspaces }) => ({
