@@ -22,6 +22,13 @@ function createCollection<T>(key: (row: T) => string, rows: T[] = []) {
 		insert: (row: T) => {
 			state.set(key(row), row);
 		},
+		update: (id: string, mutate: (draft: T) => void) => {
+			const row = state.get(id);
+			if (!row) return;
+			const draft = structuredClone(row);
+			mutate(draft);
+			state.set(id, draft);
+		},
 	};
 }
 
@@ -210,6 +217,24 @@ describe("applyProjectSidebarState", () => {
 
 		const moved = target.v2WorkspaceLocalState.get(WORKSPACE_ID);
 		expect(moved?.sidebarState.pinnedAt).toBe(Number.MAX_SAFE_INTEGER - 9);
+	});
+
+	it("un-hides a tombstone left by an earlier move out of this org", () => {
+		const target = createEmptyTarget();
+		insertRow(
+			target.v2WorkspaceLocalState,
+			workspaceRow(WORKSPACE_ID, { isHidden: true, pinnedAt: null }),
+		);
+
+		applyProjectSidebarState(
+			target,
+			PROJECT_ID,
+			collectProjectSidebarState(createSource(), PROJECT_ID),
+		);
+
+		const healed = target.v2WorkspaceLocalState.get(WORKSPACE_ID);
+		expect(healed?.sidebarState.isHidden).toBe(false);
+		expect(healed?.sidebarState.sectionId).toBe(SECTION_ID);
 	});
 
 	it("is idempotent — a retried move keeps the target's own values", () => {

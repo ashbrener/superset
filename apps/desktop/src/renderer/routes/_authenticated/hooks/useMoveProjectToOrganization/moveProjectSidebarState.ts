@@ -81,12 +81,28 @@ export function applyProjectSidebarState(
 	let nextPinnedAt = getNextPinnedAt(collections);
 	for (const row of state.workspaces) {
 		if (row.sidebarState.isHidden) continue;
-		if (collections.v2WorkspaceLocalState.get(row.workspaceId)) continue;
 		const pinnedAt = row.sidebarState.pinnedAt == null ? null : nextPinnedAt++;
-		collections.v2WorkspaceLocalState.insert({
-			...row,
-			sidebarState: { ...row.sidebarState, pinnedAt },
-		});
+		const existing = collections.v2WorkspaceLocalState.get(row.workspaceId);
+		if (!existing) {
+			collections.v2WorkspaceLocalState.insert({
+				...row,
+				sidebarState: { ...row.sidebarState, pinnedAt },
+			});
+			continue;
+		}
+		// Moving a project back to an org it came from meets the tombstone the
+		// earlier move left behind. The workspace is real and on its way in, so
+		// un-hide it — skipping would land the project here with its worktrees
+		// silently missing.
+		if (existing.sidebarState.isHidden) {
+			collections.v2WorkspaceLocalState.update(row.workspaceId, (draft) => {
+				draft.sidebarState.projectId = projectId;
+				draft.sidebarState.isHidden = false;
+				draft.sidebarState.sectionId = row.sidebarState.sectionId;
+				draft.sidebarState.tabOrder = row.sidebarState.tabOrder;
+				draft.sidebarState.pinnedAt = pinnedAt;
+			});
+		}
 	}
 }
 
