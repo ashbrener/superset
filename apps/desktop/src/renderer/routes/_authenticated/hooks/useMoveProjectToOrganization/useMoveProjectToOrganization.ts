@@ -128,8 +128,16 @@ export function useMoveProjectToOrganization() {
 
 				// `origin` skips the cloud lookup: the row has already moved, and
 				// the host would otherwise resolve it against its own org.
+				// `mainWorkspaceId` keeps the repo's own checkout on the id it
+				// already had — without it setup mints a new one and every piece
+				// of local state keyed to the old id (pane layout, pins) is
+				// stranded, along with its cloud row.
+				const mainWorkspaceId = projectWorkspaces.find(
+					(workspace) => workspace.type === "main",
+				)?.id;
 				await targetClient.project.setup.mutate({
 					projectId,
+					...(mainWorkspaceId ? { mainWorkspaceId } : {}),
 					origin: { repoCloneUrl: project.repoUrl, name: project.name },
 					mode: { kind: "import", repoPath: project.repoPath },
 				});

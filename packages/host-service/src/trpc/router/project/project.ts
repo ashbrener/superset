@@ -515,6 +515,13 @@ export const projectRouter = router({
 			z.object({
 				projectId: z.string().uuid(),
 				/**
+				 * Reuse an existing main-workspace id rather than minting one.
+				 * A cross-org move re-registers the project on the destination
+				 * host; without this the checkout would come back with a new id
+				 * and lose the local state keyed to it.
+				 */
+				mainWorkspaceId: z.string().uuid().optional(),
+				/**
 				 * Repo coordinates supplied by the caller (from the host
 				 * fan-out) so a local-first project created on ANOTHER host —
 				 * which has no cloud row — can be set up on this device. When
@@ -589,6 +596,7 @@ export const projectRouter = router({
 							ctx,
 							input.projectId,
 							existing.repoPath,
+							{ mainWorkspaceId: input.mainWorkspaceId },
 						);
 						return {
 							repoPath: existing.repoPath,
@@ -621,6 +629,7 @@ export const projectRouter = router({
 						ctx,
 						input.projectId,
 						resolved.repoPath,
+						{ mainWorkspaceId: input.mainWorkspaceId },
 					);
 					return {
 						repoPath: resolved.repoPath,
@@ -669,6 +678,7 @@ export const projectRouter = router({
 							ctx,
 							input.projectId,
 							existing.repoPath,
+							{ mainWorkspaceId: input.mainWorkspaceId },
 						);
 						return {
 							repoPath: existing.repoPath,
@@ -692,6 +702,7 @@ export const projectRouter = router({
 						ctx,
 						input.projectId,
 						resolved.repoPath,
+						{ mainWorkspaceId: input.mainWorkspaceId },
 					);
 					return {
 						repoPath: resolved.repoPath,
