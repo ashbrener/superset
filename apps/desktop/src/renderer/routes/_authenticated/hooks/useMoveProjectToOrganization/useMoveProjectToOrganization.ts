@@ -248,8 +248,13 @@ export function useMoveProjectToOrganization() {
 						navigateAwayFromWorkspace(workspace.id);
 					}
 
-					removeProjectFromSidebar(projectId);
+					// Detach first: the host database is what decides the org owns
+					// this project, and if it throws the sidebar row is still there
+					// — which is exactly the remnant the error below tells the user
+					// to clear. Removing the row first would take away the only
+					// thing they could act on.
 					await sourceClient.project.detach.mutate({ projectId });
+					removeProjectFromSidebar(projectId);
 				} catch (error) {
 					console.error("[move-project] cleanup after the move failed", error);
 					throw new Error(
