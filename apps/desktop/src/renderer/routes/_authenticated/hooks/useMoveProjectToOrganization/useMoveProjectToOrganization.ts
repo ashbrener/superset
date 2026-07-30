@@ -121,10 +121,34 @@ export function useMoveProjectToOrganization() {
 				const targetHostUrl = await waitForTargetHost(targetOrganizationId);
 				const targetClient = getHostServiceClientByUrl(targetHostUrl);
 
-				await apiTrpcClient.v2Project.moveToOrganization.mutate({
-					id: projectId,
-					targetOrganizationId,
-				});
+				const cloudMove =
+					await apiTrpcClient.v2Project.moveToOrganization.mutate({
+						id: projectId,
+						targetOrganizationId,
+					});
+
+				// From here the cloud row (if there is one) already sits in the
+				// destination org while the local rows are still on the source
+				// host. Anything that throws before the local side is registered
+				// leaves the project split between the two, so undo the cloud
+				// move rather than leaving it that way.
+				const undoCloudMove = async (cause: unknown): Promise<never> => {
+					if (cloudMove.cloudRowMissing || !activeOrganizationId) throw cause;
+					try {
+						await apiTrpcClient.v2Project.moveToOrganization.mutate({
+							id: projectId,
+							targetOrganizationId: activeOrganizationId,
+						});
+					} catch (undoError) {
+						console.error("[move-project] rollback failed", undoError);
+						throw new Error(
+							`The move failed part way and couldn't be undone. The project now belongs to the destination organization in the cloud but is still set up on this device under the old one. Switch to the destination organization and move it back. Original error: ${
+								cause instanceof Error ? cause.message : String(cause)
+							}`,
+						);
+					}
+					throw cause;
+				};
 
 				// `origin` skips the cloud lookup: the row has already moved, and
 				// the host would otherwise resolve it against its own org.
@@ -135,26 +159,30 @@ export function useMoveProjectToOrganization() {
 				const mainWorkspaceId = projectWorkspaces.find(
 					(workspace) => workspace.type === "main",
 				)?.id;
-				await targetClient.project.setup.mutate({
-					projectId,
-					...(mainWorkspaceId ? { mainWorkspaceId } : {}),
-					origin: { repoCloneUrl: project.repoUrl, name: project.name },
-					mode: { kind: "import", repoPath: project.repoPath },
-				});
+				try {
+					await targetClient.project.setup.mutate({
+						projectId,
+						...(mainWorkspaceId ? { mainWorkspaceId } : {}),
+						origin: { repoCloneUrl: project.repoUrl, name: project.name },
+						mode: { kind: "import", repoPath: project.repoPath },
+					});
 
-				// Per-project settings `project.setup` doesn't carry over.
-				if (project.worktreeBaseDir) {
-					await targetClient.project.setWorktreeBaseDir.mutate({
-						projectId,
-						path: project.worktreeBaseDir,
-					});
-				}
-				if (project.branchPrefixMode) {
-					await targetClient.project.setBranchPrefix.mutate({
-						projectId,
-						mode: project.branchPrefixMode,
-						customPrefix: project.branchPrefixCustom ?? undefined,
-					});
+					// Per-project settings `project.setup` doesn't carry over.
+					if (project.worktreeBaseDir) {
+						await targetClient.project.setWorktreeBaseDir.mutate({
+							projectId,
+							path: project.worktreeBaseDir,
+						});
+					}
+					if (project.branchPrefixMode) {
+						await targetClient.project.setBranchPrefix.mutate({
+							projectId,
+							mode: project.branchPrefixMode,
+							customPrefix: project.branchPrefixCustom ?? undefined,
+						});
+					}
+				} catch (error) {
+					await undoCloudMove(error);
 				}
 
 				// Adopt each worktree in place, keeping its id and path. One that

@@ -71,7 +71,10 @@ export function DashboardSidebarProjectContextMenu({
 					<>
 						<ContextMenuSeparator />
 						<ContextMenuSub>
-							<ContextMenuSubTrigger disabled={isMovingToOrganization}>
+							<ContextMenuSubTrigger
+								disabled={isMovingToOrganization}
+								className="data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+							>
 								<LuBuilding2 className="size-4 mr-2" />
 								Move to organization
 							</ContextMenuSubTrigger>
