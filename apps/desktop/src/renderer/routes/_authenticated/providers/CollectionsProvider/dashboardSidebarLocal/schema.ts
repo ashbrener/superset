@@ -34,6 +34,8 @@ export const dashboardSidebarFolderSchema = z.object({
 	tabOrder: z.number().int().default(0),
 	isCollapsed: z.boolean().default(false),
 	color: z.string().nullable().default(null),
+	/** Emoji shown before the folder name; null renders none. */
+	icon: z.string().nullable().default(null),
 });
 
 export type DashboardSidebarFolderRow = z.infer<

@@ -103,4 +103,6 @@ export interface DashboardSidebarFolder {
 	isCollapsed: boolean;
 	tabOrder: number;
 	color: string | null;
+	/** Emoji, or a `data:` image URL for a brand logo. Null renders none. */
+	icon: string | null;
 }

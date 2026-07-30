@@ -155,6 +155,7 @@ export function DashboardSidebar({
 		moveProjectToFolder,
 		renameFolder,
 		setFolderColor,
+		setFolderIcon,
 		toggleFolderCollapsed,
 	} = useDashboardSidebarState();
 
@@ -395,6 +396,7 @@ export function DashboardSidebar({
 																onToggleCollapse={toggleFolderCollapsed}
 																onRename={renameFolder}
 																onSetColor={setFolderColor}
+																onSetIcon={setFolderIcon}
 																onDelete={deleteFolder}
 															/>
 														)}

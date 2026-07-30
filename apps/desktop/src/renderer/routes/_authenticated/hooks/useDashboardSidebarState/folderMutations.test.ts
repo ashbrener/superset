@@ -6,6 +6,7 @@ import {
 	renameFolderInState,
 	reorderFoldersInState,
 	setFolderColorInState,
+	setFolderIconInState,
 	toggleFolderCollapsedInState,
 } from "./folderMutations";
 
@@ -219,5 +220,40 @@ describe("folder mutations", () => {
 
 		expect(collections.v2SidebarFolders.get(b)?.tabOrder).toBe(1);
 		expect(collections.v2SidebarFolders.get(a)?.tabOrder).toBe(2);
+	});
+});
+
+describe("setFolderIconInState", () => {
+	it("sets an emoji and clears it again", () => {
+		const collections = makeCollections();
+		const folderId = createFolderInState(collections);
+
+		setFolderIconInState(collections, folderId, "💼");
+		expect(collections.v2SidebarFolders.get(folderId)?.icon).toBe("💼");
+
+		setFolderIconInState(collections, folderId, null);
+		expect(collections.v2SidebarFolders.get(folderId)?.icon).toBeNull();
+	});
+
+	it("stores an image icon as given — a data URL is just a longer string", () => {
+		const collections = makeCollections();
+		const folderId = createFolderInState(collections);
+		const dataUrl = "data:image/png;base64,iVBORw0KGgo=";
+
+		setFolderIconInState(collections, folderId, dataUrl);
+
+		expect(collections.v2SidebarFolders.get(folderId)?.icon).toBe(dataUrl);
+	});
+
+	it("ignores a folder that isn't there", () => {
+		const collections = makeCollections();
+
+		expect(() =>
+			setFolderIconInState(
+				collections,
+				"11111111-1111-4111-8111-111111111111",
+				"💼",
+			),
+		).not.toThrow();
 	});
 });

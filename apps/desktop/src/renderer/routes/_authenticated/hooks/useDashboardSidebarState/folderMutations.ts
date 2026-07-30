@@ -45,6 +45,7 @@ export function createFolderInState(
 		tabOrder: getNextTabOrder([...collections.v2SidebarFolders.state.values()]),
 		isCollapsed: false,
 		color: pickFolderColor(),
+		icon: null,
 	});
 
 	return folderId;
@@ -81,6 +82,17 @@ export function setFolderColorInState(
 	if (!collections.v2SidebarFolders.get(folderId)) return;
 	collections.v2SidebarFolders.update(folderId, (draft) => {
 		draft.color = color;
+	});
+}
+
+export function setFolderIconInState(
+	collections: FolderCollections,
+	folderId: string,
+	icon: string | null,
+): void {
+	if (!collections.v2SidebarFolders.get(folderId)) return;
+	collections.v2SidebarFolders.update(folderId, (draft) => {
+		draft.icon = icon;
 	});
 }
 
