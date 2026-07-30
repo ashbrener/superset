@@ -466,9 +466,6 @@ export const v2ProjectRouter = {
 				});
 			}
 
-			await getProjectAccess(ctx.session.user.id, input.id, {
-				organizationId: sourceOrgId,
-			});
 			// The destination is not the active org, so no upstream check covers
 			// it — a move is a write into that org and needs its own membership
 			// check.
@@ -480,12 +477,18 @@ export const v2ProjectRouter = {
 			const project = await dbWs.query.v2Projects.findFirst({
 				where: eq(v2Projects.id, input.id),
 			});
+			// Projects created on a host are local-first: the host mints the id
+			// and never writes a cloud row. There is then nothing here to re-key
+			// — which org such a project belongs to is decided entirely by the
+			// host database holding it — so report the no-op instead of failing
+			// and stranding the caller before it does the local move.
 			if (!project) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Project not found",
-				});
+				return { project: null, txid: null, cloudRowMissing: true } as const;
 			}
+
+			await getProjectAccess(ctx.session.user.id, input.id, {
+				organizationId: sourceOrgId,
+			});
 
 			const slug = input.slug ?? project.slug;
 			const clash = await dbWs.query.v2Projects.findFirst({
@@ -669,7 +672,7 @@ export const v2ProjectRouter = {
 				},
 			});
 
-			return { ...moved, txid };
+			return { project: moved, txid, cloudRowMissing: false } as const;
 		}),
 
 	delete: jwtProcedure
