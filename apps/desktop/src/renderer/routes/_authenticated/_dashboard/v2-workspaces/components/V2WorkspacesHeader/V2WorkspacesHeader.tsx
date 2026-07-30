@@ -36,10 +36,7 @@ interface V2WorkspacesHeaderProps {
 		string,
 		{ hostName: string; isOnline: boolean; isLocal: boolean }
 	>;
-	projectsById: Map<
-		string,
-		{ projectName: string; githubOwner: string | null }
-	>;
+	projectsById: Map<string, { projectName: string; iconUrl: string | null }>;
 }
 
 export function V2WorkspacesHeader({
@@ -95,12 +92,12 @@ export function V2WorkspacesHeader({
 	const selectedProjectLabel = selectedProjectFromOptions
 		? {
 				projectName: selectedProjectFromOptions.projectName,
-				githubOwner: selectedProjectFromOptions.githubOwner,
+				iconUrl: selectedProjectFromOptions.iconUrl,
 			}
 		: selectedProjectFallback
 			? {
 					projectName: selectedProjectFallback.projectName,
-					githubOwner: selectedProjectFallback.githubOwner,
+					iconUrl: selectedProjectFallback.iconUrl,
 				}
 			: undefined;
 
@@ -108,6 +105,9 @@ export function V2WorkspacesHeader({
 		<div className="border-b border-border">
 			<div className="flex w-full flex-wrap items-center justify-between gap-3 px-6 py-4">
 				<h1 className="text-sm font-semibold tracking-tight">Workspaces</h1>
+
+				{/* Window-drag leaf standing in for the hidden TopBar. */}
+				<div className="drag -my-4 min-w-0 flex-1 self-stretch" />
 
 				<div className="flex flex-wrap items-center gap-2">
 					<InputGroup className="w-72">
@@ -169,7 +169,7 @@ export function V2WorkspacesHeader({
 												<span className="flex w-full min-w-0 items-center gap-2">
 													<V2WorkspaceProjectIcon
 														projectName={project.projectName}
-														githubOwner={project.githubOwner}
+														iconUrl={project.iconUrl}
 														size="sm"
 													/>
 													<span className="min-w-0 flex-1 truncate">
