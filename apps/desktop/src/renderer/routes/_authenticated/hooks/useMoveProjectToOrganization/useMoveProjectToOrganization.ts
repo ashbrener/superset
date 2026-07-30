@@ -132,7 +132,22 @@ export function useMoveProjectToOrganization() {
 				// host. Anything that throws before the local side is registered
 				// leaves the project split between the two, so undo the cloud
 				// move rather than leaving it that way.
+				let targetSetupSucceeded = false;
 				const undoCloudMove = async (cause: unknown): Promise<never> => {
+					// `project.setup` may already have run, leaving the destination
+					// host holding a registration for a project that is about to
+					// belong to the source org again. Drop it — detach touches rows
+					// only, so the worktrees are untouched either way.
+					if (targetSetupSucceeded) {
+						try {
+							await targetClient.project.detach.mutate({ projectId });
+						} catch (detachError) {
+							console.error(
+								"[move-project] failed to unwind destination setup",
+								detachError,
+							);
+						}
+					}
 					if (cloudMove.cloudRowMissing || !activeOrganizationId) throw cause;
 					try {
 						await apiTrpcClient.v2Project.moveToOrganization.mutate({
@@ -166,6 +181,7 @@ export function useMoveProjectToOrganization() {
 						origin: { repoCloneUrl: project.repoUrl, name: project.name },
 						mode: { kind: "import", repoPath: project.repoPath },
 					});
+					targetSetupSucceeded = true;
 
 					// Per-project settings `project.setup` doesn't carry over.
 					if (project.worktreeBaseDir) {
@@ -209,25 +225,39 @@ export function useMoveProjectToOrganization() {
 					}
 				}
 
-				// The target org's local rows must exist before anything is written
-				// into them — these are plain localStorage collections with no
-				// rollback, so a torn write would persist.
-				const targetCollections = getCollections(targetOrganizationId);
-				await preloadCollections(targetOrganizationId);
-				applyProjectSidebarState(
-					targetCollections,
-					projectId,
-					collectProjectSidebarState(collections, projectId),
-				);
+				// Past this point the project is live in the destination — cloud
+				// rows moved, host registered, worktrees adopted. What is left is
+				// tidying the source, so a failure here is not worth unwinding a
+				// good move; it leaves the project listed in both orgs, and the
+				// error has to say that rather than read like the move failed.
+				try {
+					// The target org's local rows must exist before anything is
+					// written into them — these are plain localStorage collections
+					// with no rollback, so a torn write would persist.
+					const targetCollections = getCollections(targetOrganizationId);
+					await preloadCollections(targetOrganizationId);
+					applyProjectSidebarState(
+						targetCollections,
+						projectId,
+						collectProjectSidebarState(collections, projectId),
+					);
 
-				// Leave the workspace route before its local state disappears,
-				// otherwise the open panes are wiped in place.
-				for (const workspace of projectWorkspaces) {
-					navigateAwayFromWorkspace(workspace.id);
+					// Leave the workspace route before its local state disappears,
+					// otherwise the open panes are wiped in place.
+					for (const workspace of projectWorkspaces) {
+						navigateAwayFromWorkspace(workspace.id);
+					}
+
+					removeProjectFromSidebar(projectId);
+					await sourceClient.project.detach.mutate({ projectId });
+				} catch (error) {
+					console.error("[move-project] cleanup after the move failed", error);
+					throw new Error(
+						`${project.name} moved successfully, but clearing it out of the old organization didn't finish, so it may still be listed there. Remove it from the old organization's sidebar. Details: ${
+							error instanceof Error ? error.message : String(error)
+						}`,
+					);
 				}
-
-				removeProjectFromSidebar(projectId);
-				await sourceClient.project.detach.mutate({ projectId });
 
 				return { skippedWorkspaces };
 			} finally {

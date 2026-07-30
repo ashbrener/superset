@@ -846,55 +846,64 @@ export const projectRouter = router({
 				try {
 					const killed = await disposeSessionsByWorkspaceId(ws.id, ctx.db);
 					if (killed.failed > 0) {
-						warnings.push(`${killed.failed} terminal(s) may still be running`);
+						warnings.push(
+							`${ws.name}: ${killed.failed} terminal(s) may still be running`,
+						);
 					}
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
-					warnings.push(`Failed to dispose terminal sessions: ${message}`);
+					warnings.push(
+						`${ws.name}: failed to dispose terminal sessions: ${message}`,
+					);
 				}
 			}
 
 			try {
-				if (workspaceIds.length > 0) {
-					// Confirmed-dead sessions go now — `origin_workspace_id` is ON
-					// DELETE SET NULL, so anything left behind would survive the
-					// workspace delete as an unowned orphan no sweep can find.
-					// Still-`active` rows are failed kills: keep them reachable so
-					// the reaper can retry, exactly as workspaceCleanup.destroy does.
-					ctx.db
-						.delete(terminalSessions)
-						.where(
-							and(
-								inArray(terminalSessions.originWorkspaceId, workspaceIds),
-								ne(terminalSessions.status, "active"),
-							),
-						)
-						.run();
-					// `workspace_id` on these two is plain text with no foreign key,
-					// so the project cascade never reaches them — delete explicitly.
-					// Live ACP adapters are owned by the manager, not by these rows;
-					// dropping the registry only stops this host from resurrecting
-					// sessions for a project it no longer serves.
-					ctx.db
-						.delete(terminalAgentBindings)
-						.where(inArray(terminalAgentBindings.workspaceId, workspaceIds))
-						.run();
-					ctx.db
-						.delete(acpSessions)
-						.where(inArray(acpSessions.workspaceId, workspaceIds))
-						.run();
-				}
+				// One transaction: a throw part way through would otherwise leave
+				// a project row whose workspaces are already gone — a project the
+				// destination host has adopted but this one still half-owns.
+				ctx.db.transaction(() => {
+					if (workspaceIds.length > 0) {
+						// Confirmed-dead sessions go now — `origin_workspace_id` is ON
+						// DELETE SET NULL, so anything left behind would survive the
+						// workspace delete as an unowned orphan no sweep can find.
+						// Still-`active` rows are failed kills: keep them reachable so
+						// the reaper can retry, exactly as workspaceCleanup.destroy does.
+						ctx.db
+							.delete(terminalSessions)
+							.where(
+								and(
+									inArray(terminalSessions.originWorkspaceId, workspaceIds),
+									ne(terminalSessions.status, "active"),
+								),
+							)
+							.run();
+						// `workspace_id` on these two is plain text with no foreign key,
+						// so the project cascade never reaches them — delete explicitly.
+						// Live ACP adapters are owned by the manager, not by these rows;
+						// dropping the registry only stops this host from resurrecting
+						// sessions for a project it no longer serves.
+						ctx.db
+							.delete(terminalAgentBindings)
+							.where(inArray(terminalAgentBindings.workspaceId, workspaceIds))
+							.run();
+						ctx.db
+							.delete(acpSessions)
+							.where(inArray(acpSessions.workspaceId, workspaceIds))
+							.run();
+					}
 
-				// Per-row so each deletion broadcasts. The store context omits
-				// `api` on purpose: a detached workspace has not been deleted, so
-				// reporting `workspace_deleted` telemetry would be a lie — and it
-				// is the one cloud call this local-only path could still make.
-				for (const ws of localWorkspaces) {
-					deleteLocalWorkspace({ db: ctx.db, eventBus: ctx.eventBus }, ws.id);
-					invalidateLabelCache(ws.id);
-				}
-				// `pull_requests` rows cascade off the project row's foreign key.
-				ctx.db.delete(projects).where(eq(projects.id, input.projectId)).run();
+					// Per-row so each deletion broadcasts. The store context omits
+					// `api` on purpose: a detached workspace has not been deleted, so
+					// reporting `workspace_deleted` telemetry would be a lie — and it
+					// is the one cloud call this local-only path could still make.
+					for (const ws of localWorkspaces) {
+						deleteLocalWorkspace({ db: ctx.db, eventBus: ctx.eventBus }, ws.id);
+						invalidateLabelCache(ws.id);
+					}
+					// `pull_requests` rows cascade off the project row's foreign key.
+					ctx.db.delete(projects).where(eq(projects.id, input.projectId)).run();
+				});
 				emitProjectChanged(ctx.eventBus, "deleted", input.projectId);
 			} catch (err) {
 				throw new TRPCError({
