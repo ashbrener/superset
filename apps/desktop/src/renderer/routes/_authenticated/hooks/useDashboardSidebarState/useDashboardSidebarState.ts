@@ -23,6 +23,7 @@ import {
 	renameFolderInState,
 	reorderFoldersInState,
 	setFolderColorInState,
+	setFolderIconInState,
 	toggleFolderCollapsedInState,
 } from "./folderMutations";
 import {
@@ -547,6 +548,12 @@ export function useDashboardSidebarState() {
 		[collections],
 	);
 
+	const setFolderIcon = useCallback(
+		(folderId: string, icon: string | null) =>
+			setFolderIconInState(collections, folderId, icon),
+		[collections],
+	);
+
 	const moveProjectToFolder = useCallback(
 		(projectId: string, folderId: string | null) =>
 			moveProjectToFolderInState(collections, projectId, folderId),
@@ -570,6 +577,7 @@ export function useDashboardSidebarState() {
 		renameFolder,
 		reorderFolders,
 		setFolderColor,
+		setFolderIcon,
 		toggleFolderCollapsed,
 		createSection,
 		deleteSection,

@@ -204,6 +204,7 @@ export function useDashboardSidebarData() {
 					isCollapsed: folders.isCollapsed,
 					tabOrder: folders.tabOrder,
 					color: folders.color,
+					icon: folders.icon,
 				})),
 		[collections],
 	);

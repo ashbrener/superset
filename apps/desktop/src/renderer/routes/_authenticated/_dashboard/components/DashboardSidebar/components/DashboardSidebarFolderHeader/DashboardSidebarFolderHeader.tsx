@@ -20,10 +20,20 @@ import {
 	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
 } from "@superset/ui/dropdown-menu";
+import { toast } from "@superset/ui/sonner";
 import { cn } from "@superset/ui/utils";
 import { useCallback, useEffect, useState } from "react";
 import { HiCheck, HiChevronRight } from "react-icons/hi2";
-import { LuEllipsis, LuPalette, LuPencil, LuTrash2 } from "react-icons/lu";
+import {
+	LuEllipsis,
+	LuImage,
+	LuPalette,
+	LuPencil,
+	LuSmile,
+	LuTrash2,
+	LuX,
+} from "react-icons/lu";
+import { electronTrpc } from "renderer/lib/electron-trpc";
 import { RenameInput } from "renderer/screens/main/components/WorkspaceSidebar/RenameInput";
 import {
 	PROJECT_COLOR_DEFAULT,
@@ -31,6 +41,11 @@ import {
 } from "shared/constants/project-colors";
 import type { DashboardSidebarFolder } from "../../types";
 import { folderDropId } from "../../utils/folderDnd";
+import {
+	FOLDER_ICON_EMOJI,
+	isImageIcon,
+	shrinkIconDataUrl,
+} from "../../utils/folderIcon";
 
 type MenuKind = "context" | "dropdown";
 
@@ -45,13 +60,14 @@ interface DashboardSidebarFolderHeaderProps {
 	onToggleCollapse: (folderId: string) => void;
 	onRename: (folderId: string, name: string) => void;
 	onSetColor: (folderId: string, color: string | null) => void;
+	onSetIcon: (folderId: string, icon: string | null) => void;
 	onDelete: (folderId: string) => void;
 }
 
 /**
  * Header row for a sidebar folder — the grouping level above projects.
- * Mirrors the section header one level down: chevron collapse, coloured left
- * border, inline rename, and a hover actions menu.
+ * Chevron collapse, icon or colour-dot identity, inline rename, and a hover
+ * actions menu; the folder colour also tints the rail under its contents.
  */
 export function DashboardSidebarFolderHeader({
 	folder,
@@ -61,6 +77,7 @@ export function DashboardSidebarFolderHeader({
 	onToggleCollapse,
 	onRename,
 	onSetColor,
+	onSetIcon,
 	onDelete,
 }: DashboardSidebarFolderHeaderProps) {
 	const [isRenaming, setIsRenaming] = useState(autoRename);
@@ -100,6 +117,22 @@ export function DashboardSidebarFolderHeader({
 		{ name: "Default", value: PROJECT_COLOR_DEFAULT },
 		...PROJECT_COLORS,
 	];
+
+	const selectImageFile = electronTrpc.window.selectImageFile.useMutation();
+
+	// A picked file is re-encoded small before it goes in the store: folder
+	// rows share the sidebar's local quota with everything else in it.
+	const chooseImageIcon = async () => {
+		try {
+			const result = await selectImageFile.mutateAsync();
+			if (result.canceled || !result.dataUrl) return;
+			onSetIcon(folder.id, await shrinkIconDataUrl(result.dataUrl));
+		} catch (error) {
+			toast.error("Couldn't use that image", {
+				description: error instanceof Error ? error.message : String(error),
+			});
+		}
+	};
 
 	// One item list rendered as either a right-click ContextMenu or the hover
 	// "..." DropdownMenu, matching how section actions are built.
@@ -148,6 +181,41 @@ export function DashboardSidebarFolderHeader({
 								</Item>
 							);
 						})}
+					</SubContent>
+				</Sub>
+				<Sub>
+					<SubTrigger>
+						<LuSmile className={iconClassName} />
+						Set folder icon
+					</SubTrigger>
+					<SubContent className="w-56">
+						<div className="grid grid-cols-8 gap-0.5 p-1">
+							{FOLDER_ICON_EMOJI.map((emoji) => (
+								<button
+									key={emoji}
+									type="button"
+									aria-label={`Use ${emoji} as the folder icon`}
+									onClick={() => onSetIcon(folder.id, emoji)}
+									className={cn(
+										"flex size-6 items-center justify-center rounded text-base hover:bg-fill-hover",
+										folder.icon === emoji && "bg-fill-selected",
+									)}
+								>
+									{emoji}
+								</button>
+							))}
+						</div>
+						<Separator />
+						<Item onSelect={() => void chooseImageIcon()}>
+							<LuImage className={iconClassName} />
+							Choose image…
+						</Item>
+						{folder.icon && (
+							<Item onSelect={() => onSetIcon(folder.id, null)}>
+								<LuX className={iconClassName} />
+								Remove icon
+							</Item>
+						)}
 					</SubContent>
 				</Sub>
 				<Separator />
@@ -205,11 +273,26 @@ export function DashboardSidebarFolderHeader({
 							/>
 						) : (
 							<>
-								{hasColor && (
-									<span
-										className="size-2 shrink-0 rounded-full"
-										style={{ backgroundColor: folder.color ?? undefined }}
-									/>
+								{/* Icon when set (#1176), colour dot as the fallback identity. */}
+								{folder.icon ? (
+									isImageIcon(folder.icon) ? (
+										<img
+											src={folder.icon}
+											alt=""
+											className="size-3.5 shrink-0 rounded-sm object-cover"
+										/>
+									) : (
+										<span className="shrink-0 text-[13px] leading-none">
+											{folder.icon}
+										</span>
+									)
+								) : (
+									hasColor && (
+										<span
+											className="size-2 shrink-0 rounded-full"
+											style={{ backgroundColor: folder.color ?? undefined }}
+										/>
+									)
 								)}
 								<span className="truncate">{folder.name}</span>
 								{/* Children are the count while expanded; only quantify when hidden. */}
