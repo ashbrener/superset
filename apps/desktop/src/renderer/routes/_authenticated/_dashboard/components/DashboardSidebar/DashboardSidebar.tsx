@@ -34,6 +34,7 @@ import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/u
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { useInlineWorkspacePortsEnabled } from "renderer/stores/inline-workspace-ports";
 import { useSidebarWorkspacesCollapseStore } from "renderer/stores/sidebar-workspaces-collapse";
+import { PROJECT_COLOR_DEFAULT } from "shared/constants/project-colors";
 import { DashboardSidebarFolderProvider } from "./components/DashboardSidebarFolderContext";
 import { DashboardSidebarFolderHeader } from "./components/DashboardSidebarFolderHeader";
 import { DashboardSidebarHeader } from "./components/DashboardSidebarHeader";
@@ -48,7 +49,7 @@ import { useDashboardSidebarData } from "./hooks/useDashboardSidebarData";
 import { useDashboardSidebarShortcuts } from "./hooks/useDashboardSidebarShortcuts";
 import { DashboardSidebarHoverProvider } from "./providers/DashboardSidebarHoverProvider";
 import { DashboardSidebarPortsProvider } from "./providers/DashboardSidebarPortsProvider";
-import type { DashboardSidebarProject } from "./types";
+import type { DashboardSidebarFolder, DashboardSidebarProject } from "./types";
 import { FOLDER_DROP_ROOT, parseFolderDropId } from "./utils/folderDnd";
 
 interface DashboardSidebarProps {
@@ -111,16 +112,9 @@ const SortableProjectWrapper = memo(function SortableProjectWrapper({
  */
 function RootDropZone({
 	isDragging,
-	showDivider,
 	children,
 }: {
 	isDragging: boolean;
-	/**
-	 * Rule above the ungrouped list. Folder contents are otherwise flush with
-	 * the projects that follow them, so there's no way to see where a folder
-	 * ends and the ungrouped projects begin.
-	 */
-	showDivider: boolean;
 	children: React.ReactNode;
 }) {
 	const { setNodeRef, isOver } = useDroppable({ id: FOLDER_DROP_ROOT });
@@ -128,10 +122,38 @@ function RootDropZone({
 		<div
 			ref={setNodeRef}
 			className={cn(
-				showDivider && "mt-2 border-t border-border/60 pt-2",
 				isDragging && "min-h-8 rounded-md transition-colors",
 				isDragging && isOver && "bg-fill-hover ring-1 ring-primary/50",
 			)}
+		>
+			{children}
+		</div>
+	);
+}
+
+/**
+ * Indented wrapper for a folder's projects. The rail marks where the folder's
+ * contents end (so no divider is needed before the ungrouped list), tinted
+ * with the folder colour when one is set. In the collapsed icon rail there are
+ * no headers to nest under, so children render flush.
+ */
+function FolderContents({
+	folder,
+	isSidebarCollapsed,
+	children,
+}: {
+	folder: DashboardSidebarFolder;
+	isSidebarCollapsed: boolean;
+	children: React.ReactNode;
+}) {
+	if (isSidebarCollapsed) return <>{children}</>;
+	const hasColor =
+		folder.color != null && folder.color !== PROJECT_COLOR_DEFAULT;
+	return (
+		<div
+			className="ml-4 border-l border-border/60 pl-1"
+			// 8-digit hex: folder colour at ~30% alpha keeps the rail quiet.
+			style={hasColor ? { borderColor: `${folder.color}4d` } : undefined}
 		>
 			{children}
 		</div>
@@ -398,30 +420,31 @@ export function DashboardSidebar({
 																onDelete={deleteFolder}
 															/>
 														)}
-														{(isCollapsed || !folder.isCollapsed) &&
-															projects.map((project) => (
-																<SortableProjectWrapper
-																	key={project.id}
-																	project={project}
-																	isCollapsed={isCollapsed}
-																	isDraggingProject={activeProject != null}
-																	workspaceShortcutLabels={
-																		workspaceShortcutLabels
-																	}
-																	onWorkspaceHover={refreshWorkspacePullRequest}
-																	onToggleCollapse={toggleProjectCollapsed}
-																/>
-															))}
+														{(isCollapsed || !folder.isCollapsed) && (
+															<FolderContents
+																folder={folder}
+																isSidebarCollapsed={isCollapsed}
+															>
+																{projects.map((project) => (
+																	<SortableProjectWrapper
+																		key={project.id}
+																		project={project}
+																		isCollapsed={isCollapsed}
+																		isDraggingProject={activeProject != null}
+																		workspaceShortcutLabels={
+																			workspaceShortcutLabels
+																		}
+																		onWorkspaceHover={
+																			refreshWorkspacePullRequest
+																		}
+																		onToggleCollapse={toggleProjectCollapsed}
+																	/>
+																))}
+															</FolderContents>
+														)}
 													</div>
 												))}
-												<RootDropZone
-													isDragging={activeProject != null}
-													showDivider={
-														!isCollapsed &&
-														folders.length > 0 &&
-														ungroupedProjects.length > 0
-													}
-												>
+												<RootDropZone isDragging={activeProject != null}>
 													{ungroupedProjects.map((project) => (
 														<SortableProjectWrapper
 															key={project.id}

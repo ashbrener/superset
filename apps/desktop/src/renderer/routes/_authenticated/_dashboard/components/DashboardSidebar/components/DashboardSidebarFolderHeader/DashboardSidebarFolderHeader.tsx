@@ -184,11 +184,6 @@ export function DashboardSidebarFolderHeader({
 						// Highlight while a dragged project hovers this folder.
 						isOver && "bg-fill-hover ring-1 ring-primary/50",
 					)}
-					style={{
-						borderLeft: hasColor
-							? `2px solid ${folder.color}`
-							: "2px solid var(--color-border)",
-					}}
 				>
 					<div className="mr-2 grid h-5 w-5 shrink-0 items-center justify-center [&>*]:col-start-1 [&>*]:row-start-1">
 						<HiChevronRight
@@ -210,10 +205,19 @@ export function DashboardSidebarFolderHeader({
 							/>
 						) : (
 							<>
+								{hasColor && (
+									<span
+										className="size-2 shrink-0 rounded-full"
+										style={{ backgroundColor: folder.color ?? undefined }}
+									/>
+								)}
 								<span className="truncate">{folder.name}</span>
-								<span className="shrink-0 text-muted-foreground/60">
-									{projectCount}
-								</span>
+								{/* Children are the count while expanded; only quantify when hidden. */}
+								{folder.isCollapsed && (
+									<span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/50">
+										{projectCount}
+									</span>
+								)}
 							</>
 						)}
 					</div>
