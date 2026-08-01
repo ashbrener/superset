@@ -3,51 +3,23 @@ import { Button } from "@superset/ui/button";
 import {
 	ContextMenu,
 	ContextMenuContent,
-	ContextMenuItem,
-	ContextMenuSeparator,
-	ContextMenuSub,
-	ContextMenuSubContent,
-	ContextMenuSubTrigger,
 	ContextMenuTrigger,
 } from "@superset/ui/context-menu";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuSeparator,
-	DropdownMenuSub,
-	DropdownMenuSubContent,
-	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
 } from "@superset/ui/dropdown-menu";
-import { toast } from "@superset/ui/sonner";
 import { cn } from "@superset/ui/utils";
 import { useCallback, useEffect, useState } from "react";
-import { HiCheck, HiChevronRight } from "react-icons/hi2";
-import {
-	LuEllipsis,
-	LuImage,
-	LuPalette,
-	LuPencil,
-	LuSmile,
-	LuTrash2,
-	LuX,
-} from "react-icons/lu";
-import { electronTrpc } from "renderer/lib/electron-trpc";
+import { HiChevronRight } from "react-icons/hi2";
+import { LuEllipsis } from "react-icons/lu";
 import { RenameInput } from "renderer/screens/main/components/WorkspaceSidebar/RenameInput";
-import {
-	PROJECT_COLOR_DEFAULT,
-	PROJECT_COLORS,
-} from "shared/constants/project-colors";
 import type { DashboardSidebarFolder } from "../../types";
+import { hasCustomColor } from "../../utils/folderColor";
 import { folderDropId } from "../../utils/folderDnd";
-import {
-	FOLDER_ICON_EMOJI,
-	isImageIcon,
-	shrinkIconDataUrl,
-} from "../../utils/folderIcon";
-
-type MenuKind = "context" | "dropdown";
+import { isImageIcon } from "../../utils/folderIcon";
+import { FolderActionsMenuItems } from "./components/FolderActionsMenuItems";
 
 interface DashboardSidebarFolderHeaderProps {
 	folder: DashboardSidebarFolder;
@@ -110,122 +82,16 @@ export function DashboardSidebarFolderHeader({
 		id: folderDropId(folder.id),
 	});
 
-	const hasColor =
-		folder.color != null && folder.color !== PROJECT_COLOR_DEFAULT;
-	const selectedValue = folder.color ?? PROJECT_COLOR_DEFAULT;
-	const colorOptions = [
-		{ name: "Default", value: PROJECT_COLOR_DEFAULT },
-		...PROJECT_COLORS,
-	];
-
-	const selectImageFile = electronTrpc.window.selectImageFile.useMutation();
-
-	// A picked file is re-encoded small before it goes in the store: folder
-	// rows share the sidebar's local quota with everything else in it.
-	const chooseImageIcon = async () => {
-		try {
-			const result = await selectImageFile.mutateAsync();
-			if (result.canceled || !result.dataUrl) return;
-			onSetIcon(folder.id, await shrinkIconDataUrl(result.dataUrl));
-		} catch (error) {
-			toast.error("Couldn't use that image", {
-				description: error instanceof Error ? error.message : String(error),
-			});
-		}
-	};
-
-	// One item list rendered as either a right-click ContextMenu or the hover
-	// "..." DropdownMenu, matching how section actions are built.
-	const renderMenuItems = (kind: MenuKind) => {
-		const Item = kind === "context" ? ContextMenuItem : DropdownMenuItem;
-		const Separator =
-			kind === "context" ? ContextMenuSeparator : DropdownMenuSeparator;
-		const Sub = kind === "context" ? ContextMenuSub : DropdownMenuSub;
-		const SubTrigger =
-			kind === "context" ? ContextMenuSubTrigger : DropdownMenuSubTrigger;
-		const SubContent =
-			kind === "context" ? ContextMenuSubContent : DropdownMenuSubContent;
-		const iconClassName = kind === "context" ? "size-4 mr-2" : "size-4";
-
-		return (
-			<>
-				<Item onSelect={startRename}>
-					<LuPencil className={iconClassName} />
-					Rename folder
-				</Item>
-				<Sub>
-					<SubTrigger>
-						<LuPalette className={iconClassName} />
-						Set folder color
-					</SubTrigger>
-					<SubContent className="max-h-80 w-40 overflow-y-auto">
-						{colorOptions.map((option) => {
-							const isDefault = option.value === PROJECT_COLOR_DEFAULT;
-							return (
-								<Item
-									key={option.value}
-									onSelect={() =>
-										onSetColor(folder.id, isDefault ? null : option.value)
-									}
-								>
-									<span
-										className="mr-2 size-3 shrink-0 rounded-full border border-border"
-										style={{
-											backgroundColor: isDefault ? "transparent" : option.value,
-										}}
-									/>
-									<span className="flex-1">{option.name}</span>
-									{selectedValue === option.value && (
-										<HiCheck className="size-4 text-primary" />
-									)}
-								</Item>
-							);
-						})}
-					</SubContent>
-				</Sub>
-				<Sub>
-					<SubTrigger>
-						<LuSmile className={iconClassName} />
-						Set folder icon
-					</SubTrigger>
-					<SubContent className="w-56">
-						<div className="grid grid-cols-8 gap-0.5 p-1">
-							{FOLDER_ICON_EMOJI.map((emoji) => (
-								<button
-									key={emoji}
-									type="button"
-									aria-label={`Use ${emoji} as the folder icon`}
-									onClick={() => onSetIcon(folder.id, emoji)}
-									className={cn(
-										"flex size-6 items-center justify-center rounded text-base hover:bg-fill-hover",
-										folder.icon === emoji && "bg-fill-selected",
-									)}
-								>
-									{emoji}
-								</button>
-							))}
-						</div>
-						<Separator />
-						<Item onSelect={() => void chooseImageIcon()}>
-							<LuImage className={iconClassName} />
-							Choose image…
-						</Item>
-						{folder.icon && (
-							<Item onSelect={() => onSetIcon(folder.id, null)}>
-								<LuX className={iconClassName} />
-								Remove icon
-							</Item>
-						)}
-					</SubContent>
-				</Sub>
-				<Separator />
-				<Item variant="destructive" onSelect={() => onDelete(folder.id)}>
-					<LuTrash2 className={iconClassName} />
-					Delete folder
-				</Item>
-			</>
-		);
-	};
+	const renderMenuItems = (kind: "context" | "dropdown") => (
+		<FolderActionsMenuItems
+			folder={folder}
+			kind={kind}
+			onRename={startRename}
+			onSetColor={(color) => onSetColor(folder.id, color)}
+			onSetIcon={(icon) => onSetIcon(folder.id, icon)}
+			onDelete={() => onDelete(folder.id)}
+		/>
+	);
 
 	return (
 		<ContextMenu>
@@ -287,7 +153,7 @@ export function DashboardSidebarFolderHeader({
 										</span>
 									)
 								) : (
-									hasColor && (
+									hasCustomColor(folder.color) && (
 										<span
 											className="size-2 shrink-0 rounded-full"
 											style={{ backgroundColor: folder.color ?? undefined }}

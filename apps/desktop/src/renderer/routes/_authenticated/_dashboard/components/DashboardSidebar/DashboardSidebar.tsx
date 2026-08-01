@@ -34,7 +34,6 @@ import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/u
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { useInlineWorkspacePortsEnabled } from "renderer/stores/inline-workspace-ports";
 import { useSidebarWorkspacesCollapseStore } from "renderer/stores/sidebar-workspaces-collapse";
-import { PROJECT_COLOR_DEFAULT } from "shared/constants/project-colors";
 import { DashboardSidebarFolderProvider } from "./components/DashboardSidebarFolderContext";
 import { DashboardSidebarFolderHeader } from "./components/DashboardSidebarFolderHeader";
 import { DashboardSidebarHeader } from "./components/DashboardSidebarHeader";
@@ -50,6 +49,7 @@ import { useDashboardSidebarShortcuts } from "./hooks/useDashboardSidebarShortcu
 import { DashboardSidebarHoverProvider } from "./providers/DashboardSidebarHoverProvider";
 import { DashboardSidebarPortsProvider } from "./providers/DashboardSidebarPortsProvider";
 import type { DashboardSidebarFolder, DashboardSidebarProject } from "./types";
+import { hasCustomColor } from "./utils/folderColor";
 import { FOLDER_DROP_ROOT, parseFolderDropId } from "./utils/folderDnd";
 
 interface DashboardSidebarProps {
@@ -147,13 +147,15 @@ function FolderContents({
 	children: React.ReactNode;
 }) {
 	if (isSidebarCollapsed) return <>{children}</>;
-	const hasColor =
-		folder.color != null && folder.color !== PROJECT_COLOR_DEFAULT;
 	return (
 		<div
 			className="ml-4 border-l border-border/60 pl-1"
 			// 8-digit hex: folder colour at ~30% alpha keeps the rail quiet.
-			style={hasColor ? { borderColor: `${folder.color}4d` } : undefined}
+			style={
+				hasCustomColor(folder.color)
+					? { borderColor: `${folder.color}4d` }
+					: undefined
+			}
 		>
 			{children}
 		</div>

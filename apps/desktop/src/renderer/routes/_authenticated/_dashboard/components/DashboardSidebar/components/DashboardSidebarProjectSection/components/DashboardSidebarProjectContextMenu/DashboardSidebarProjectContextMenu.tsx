@@ -17,8 +17,8 @@ import {
 	LuSettings,
 	LuX,
 } from "react-icons/lu";
-import { PROJECT_COLOR_DEFAULT } from "shared/constants/project-colors";
 import type { DashboardSidebarFolder } from "../../../../types";
+import { hasCustomColor } from "../../../../utils/folderColor";
 
 interface DashboardSidebarProjectContextMenuProps {
 	onCreateSection: () => void;
@@ -84,8 +84,7 @@ export function DashboardSidebarProjectContextMenu({
 						</ContextMenuItem>
 						{folders.length > 0 && <ContextMenuSeparator />}
 						{folders.map((folder) => {
-							const hasColor =
-								folder.color != null && folder.color !== PROJECT_COLOR_DEFAULT;
+							const hasColor = hasCustomColor(folder.color);
 							return (
 								<ContextMenuItem
 									key={folder.id}
