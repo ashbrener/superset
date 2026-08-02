@@ -61,8 +61,10 @@ export function useMoveProjectToOrganization() {
 	const { removeProjectFromSidebar } = useDashboardSidebarState();
 	const { navigateAwayFromWorkspace } = useNavigateAwayFromWorkspace();
 	const utils = electronTrpc.useUtils();
+	// `restart` is stop-then-start, so it doubles as "make sure this org's host
+	// is up" — the coordinator no longer exposes a bare start.
 	const { mutateAsync: startHostService } =
-		electronTrpc.hostServiceCoordinator.start.useMutation();
+		electronTrpc.hostServiceCoordinator.restart.useMutation();
 	const [isMoving, setIsMoving] = useState(false);
 
 	/** Brings up the target org's host and returns its loopback URL. */

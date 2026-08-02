@@ -10,6 +10,7 @@ import {
 } from "@superset/ui/context-menu";
 import {
 	LuBuilding2,
+	LuFolderInput,
 	LuFolderOpen,
 	LuFolderPlus,
 	LuPencil,
@@ -24,6 +25,7 @@ export interface ProjectMoveTargetOrganization {
 
 interface DashboardSidebarProjectContextMenuProps {
 	onCreateSection: () => void;
+	onImportWorktrees: () => void;
 	onOpenInFinder: () => void;
 	onOpenSettings: () => void;
 	onRemoveFromSidebar: () => void;
@@ -37,6 +39,7 @@ interface DashboardSidebarProjectContextMenuProps {
 
 export function DashboardSidebarProjectContextMenu({
 	onCreateSection,
+	onImportWorktrees,
 	onOpenInFinder,
 	onOpenSettings,
 	onRemoveFromSidebar,
@@ -91,6 +94,10 @@ export function DashboardSidebarProjectContextMenu({
 						</ContextMenuSub>
 					</>
 				)}
+				<ContextMenuItem onSelect={onImportWorktrees}>
+					<LuFolderInput className="size-4 mr-2" />
+					Import untracked worktrees
+				</ContextMenuItem>
 				<ContextMenuSeparator />
 				<ContextMenuItem
 					onSelect={onRemoveFromSidebar}
