@@ -10,6 +10,7 @@ import {
 } from "@superset/ui/context-menu";
 import { HiCheck } from "react-icons/hi2";
 import {
+	LuFolderInput,
 	LuFolderOpen,
 	LuFolderPlus,
 	LuFolders,
@@ -22,6 +23,7 @@ import { hasCustomColor } from "../../../../utils/folderColor";
 
 interface DashboardSidebarProjectContextMenuProps {
 	onCreateSection: () => void;
+	onImportWorktrees: () => void;
 	onOpenInFinder: () => void;
 	onOpenSettings: () => void;
 	onRemoveFromSidebar: () => void;
@@ -37,6 +39,7 @@ interface DashboardSidebarProjectContextMenuProps {
 
 export function DashboardSidebarProjectContextMenu({
 	onCreateSection,
+	onImportWorktrees,
 	onOpenInFinder,
 	onOpenSettings,
 	onRemoveFromSidebar,
@@ -70,6 +73,10 @@ export function DashboardSidebarProjectContextMenu({
 				<ContextMenuItem onSelect={onCreateSection}>
 					<LuFolderPlus className="size-4 mr-2" />
 					New workspace group
+				</ContextMenuItem>
+				<ContextMenuItem onSelect={onImportWorktrees}>
+					<LuFolderInput className="size-4 mr-2" />
+					Import untracked worktrees
 				</ContextMenuItem>
 				<ContextMenuSeparator />
 				<ContextMenuSub>
