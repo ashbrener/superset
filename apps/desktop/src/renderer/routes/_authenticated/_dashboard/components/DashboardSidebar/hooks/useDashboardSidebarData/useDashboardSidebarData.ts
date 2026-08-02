@@ -201,6 +201,19 @@ export function useDashboardSidebarData() {
 				})),
 		[collections],
 	);
+	// Same JS re-sort as the project rows below, for the same reason: the
+	// query's incremental orderBy doesn't reliably re-sort after an insert or
+	// a tabOrder renumber, so a new folder could sit in the wrong place until
+	// reload. `folderId` breaks ties so equal tabOrders stay stable.
+	const orderedSidebarFolders = useMemo(
+		() =>
+			[...sidebarFolders].sort(
+				(left, right) =>
+					left.tabOrder - right.tabOrder || left.id.localeCompare(right.id),
+			),
+		[sidebarFolders],
+	);
+
 	// Sorted in JS, not via the query's orderBy: the incremental orderBy
 	// does not reliably re-sort on row inserts/renumbers (a newly added
 	// project stayed appended at the bottom until reload), and tabOrders
@@ -508,7 +521,7 @@ export function useDashboardSidebarData() {
 
 	return {
 		groups,
-		folders: sidebarFolders,
+		folders: orderedSidebarFolders,
 		pinnedWorkspaces,
 		refreshWorkspacePullRequest,
 		toggleProjectCollapsed,

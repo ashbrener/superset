@@ -364,8 +364,16 @@ export function DashboardSidebar({
 				// dragging into a folder's list joins it) and reorder.
 				const target = groups.find((project) => project.id === overId);
 				const dragged = groups.find((project) => project.id === activeId);
-				if (target && dragged && dragged.folderId !== target.folderId) {
-					moveProjectToFolder(activeId, target.folderId);
+				// A project whose folder no longer exists renders at the root but
+				// still carries the dead id. Resolve against the live folder set,
+				// or dropping onto it would move the dragged project into a folder
+				// that isn't there instead of to the root it appears to be in.
+				const targetFolderId =
+					target?.folderId && folderIds.has(target.folderId)
+						? target.folderId
+						: null;
+				if (target && dragged && dragged.folderId !== targetFolderId) {
+					moveProjectToFolder(activeId, targetFolderId);
 				}
 
 				const oldIndex = projectOrder.indexOf(activeId);
@@ -378,7 +386,7 @@ export function DashboardSidebar({
 			}
 			setActiveProject(null);
 		},
-		[projectOrder, reorderProjects, groups, moveProjectToFolder],
+		[projectOrder, reorderProjects, groups, moveProjectToFolder, folderIds],
 	);
 
 	return (

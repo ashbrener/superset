@@ -62,6 +62,7 @@ import {
 	dashboardSidebarSectionSchema,
 	type FailedWorkspaceCreateRow,
 	failedWorkspaceCreateSchema,
+	healSidebarProject,
 	healV2UserPreferences,
 	healWorkspaceLocalState,
 	type V2TerminalPresetRow,
@@ -785,15 +786,18 @@ function createOrgCollections(organizationId: string): OrgCollections {
 
 	const v2SidebarProjects = createIndexedCollection(
 		localStorageCollectionOptions(
-			hardenLocalCollection({
-				id: `v2_sidebar_projects-${organizationId}`,
-				storageKey: `v2-sidebar-projects-${organizationId}`,
-				schema: dashboardSidebarProjectSchema,
-				// Explicit type for the same reason `withReadHeal` needs one: a
-				// passthrough generic drops the contextual typing that would
-				// otherwise narrow the key to string.
-				getKey: (item: DashboardSidebarProjectRow) => item.projectId,
-			}),
+			hardenLocalCollection(
+				{
+					id: `v2_sidebar_projects-${organizationId}`,
+					storageKey: `v2-sidebar-projects-${organizationId}`,
+					schema: dashboardSidebarProjectSchema,
+					// Explicit type for the same reason `withReadHeal` needs one: a
+					// passthrough generic drops the contextual typing that would
+					// otherwise narrow the key to string.
+					getKey: (item: DashboardSidebarProjectRow) => item.projectId,
+				},
+				healSidebarProject,
+			),
 		),
 	);
 	v2SidebarProjects.createIndex(
@@ -806,12 +810,16 @@ function createOrgCollections(organizationId: string): OrgCollections {
 	);
 
 	const v2SidebarFolders = createIndexedCollection(
-		localStorageCollectionOptions({
-			id: `v2_sidebar_folders-${organizationId}`,
-			storageKey: `v2-sidebar-folders-${organizationId}`,
-			schema: dashboardSidebarFolderSchema,
-			getKey: (item) => item.folderId,
-		}),
+		localStorageCollectionOptions(
+			hardenLocalCollection({
+				id: `v2_sidebar_folders-${organizationId}`,
+				storageKey: `v2-sidebar-folders-${organizationId}`,
+				schema: dashboardSidebarFolderSchema,
+				// Explicit type for the same reason the sibling collections need
+				// one: a passthrough generic drops the contextual typing.
+				getKey: (item: DashboardSidebarFolderRow) => item.folderId,
+			}),
+		),
 	);
 	v2SidebarFolders.createIndex((folder) => folder.tabOrder, basicIndexConfig);
 
