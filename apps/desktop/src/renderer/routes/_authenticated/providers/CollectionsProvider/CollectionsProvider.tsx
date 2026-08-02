@@ -40,7 +40,9 @@ export function preloadActiveOrganizationCollections(
 
 export function CollectionsProvider({ children }: { children: ReactNode }) {
 	const { data: session } = authClient.useSession();
-	const [isSwitching, setIsSwitching] = useState(false);
+	// A ref, not state: nothing renders differently while a switch is in
+	// flight, it only stops two switches overlapping.
+	const switchInFlightRef = useRef(false);
 
 	// Per-window active org. The window registry (main process) is the source of
 	// truth: each window holds its own org, so switching in one window never
@@ -95,7 +97,8 @@ export function CollectionsProvider({ children }: { children: ReactNode }) {
 	const switchOrganization = useCallback(
 		async (organizationId: string) => {
 			if (organizationId === activeOrganizationId) return;
-			setIsSwitching(true);
+			if (switchInFlightRef.current) return;
+			switchInFlightRef.current = true;
 			try {
 				// Window-local switch: warm the new org's collections, then flip the
 				// UI. The registry is updated by the sync effect above when
@@ -110,7 +113,7 @@ export function CollectionsProvider({ children }: { children: ReactNode }) {
 					error,
 				);
 			} finally {
-				setIsSwitching(false);
+				switchInFlightRef.current = false;
 			}
 		},
 		[activeOrganizationId],
@@ -141,7 +144,13 @@ export function CollectionsProvider({ children }: { children: ReactNode }) {
 		[collections, activeOrganizationId, switchOrganization],
 	);
 
-	if (!contextValue || isSwitching) {
+	// Only a window with no org at all renders nothing. Switching used to
+	// return null too, which unmounted the whole authenticated tree for as
+	// long as the destination org's collections took to preload — a blank
+	// window for minutes on a large org. The context still points at the
+	// previous org until the switch resolves, so keeping it mounted shows the
+	// org you're leaving rather than a void.
+	if (!contextValue) {
 		return null;
 	}
 
