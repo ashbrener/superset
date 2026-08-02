@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { setHostServiceSecret } from "renderer/lib/host-service-auth";
@@ -67,28 +68,44 @@ export function useMoveProjectToOrganization() {
 	const { removeProjectFromSidebar } = useDashboardSidebarState();
 	const { navigateAwayFromWorkspace } = useNavigateAwayFromWorkspace();
 	const utils = electronTrpc.useUtils();
-	// `restart` is stop-then-start, so it doubles as "make sure this org's host
-	// is up" — the coordinator no longer exposes a bare start.
-	const { mutateAsync: startHostService } =
+	const queryClient = useQueryClient();
+	// The coordinator exposes no bare start, so a cold host has to be brought
+	// up with `restart`. Only ever call it when the host ISN'T already
+	// running: restart is stop-then-start, which would kill the terminals and
+	// agent sessions of every OTHER project in the destination org.
+	const { mutateAsync: restartHostService } =
 		electronTrpc.hostServiceCoordinator.restart.useMutation();
 	const [isMoving, setIsMoving] = useState(false);
 
-	/** Brings up the target org's host and returns its loopback URL. */
+	/** Returns the destination org's host URL, starting it only if it's down. */
 	const waitForTargetHost = useCallback(
 		async (organizationId: string): Promise<string> => {
-			await startHostService({ organizationId });
+			const resolve = (connection: {
+				port?: number | null;
+				secret?: string | null;
+			}): string | null => {
+				if (!connection?.port) return null;
+				const hostUrl = `http://127.0.0.1:${connection.port}`;
+				if (connection.secret) setHostServiceSecret(hostUrl, connection.secret);
+				return hostUrl;
+			};
+
+			const running = resolve(
+				(await utils.hostServiceCoordinator.getConnection.fetch({
+					organizationId,
+				})) ?? {},
+			);
+			if (running) return running;
+
+			await restartHostService({ organizationId });
 			const deadline = Date.now() + TARGET_HOST_READY_TIMEOUT_MS;
 			while (Date.now() < deadline) {
-				const connection =
-					await utils.hostServiceCoordinator.getConnection.fetch({
+				const hostUrl = resolve(
+					(await utils.hostServiceCoordinator.getConnection.fetch({
 						organizationId,
-					});
-				if (connection?.port) {
-					const hostUrl = `http://127.0.0.1:${connection.port}`;
-					if (connection.secret)
-						setHostServiceSecret(hostUrl, connection.secret);
-					return hostUrl;
-				}
+					})) ?? {},
+				);
+				if (hostUrl) return hostUrl;
 				await new Promise((resolve) =>
 					setTimeout(resolve, TARGET_HOST_POLL_INTERVAL_MS),
 				);
@@ -97,7 +114,7 @@ export function useMoveProjectToOrganization() {
 				"The destination organization's host service did not start. Try again in a moment.",
 			);
 		},
-		[startHostService, utils],
+		[restartHostService, utils],
 	);
 
 	const moveProjectToOrganization = useCallback(
@@ -251,6 +268,16 @@ export function useMoveProjectToOrganization() {
 					);
 				}
 
+				// The project list polls its hosts on a 30s fallback interval, so
+				// without this the moved project takes up to half a minute to
+				// appear in the destination (and to leave the source).
+				void queryClient.invalidateQueries({
+					queryKey: ["host-service", "projects", "list"],
+				});
+				void queryClient.invalidateQueries({
+					queryKey: ["host-service", "workspaces", "list"],
+				});
+
 				return { skippedWorkspaces };
 			} finally {
 				setIsMoving(false);
@@ -261,6 +288,7 @@ export function useMoveProjectToOrganization() {
 			activeOrganizationId,
 			collections,
 			navigateAwayFromWorkspace,
+			queryClient,
 			removeProjectFromSidebar,
 			waitForHostReady,
 			waitForTargetHost,
