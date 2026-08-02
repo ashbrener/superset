@@ -6,6 +6,7 @@ import {
 	useEffect,
 	useMemo,
 	useRef,
+	useState,
 } from "react";
 import { env } from "renderer/env.renderer";
 import { authClient } from "renderer/lib/auth-client";
@@ -43,37 +44,72 @@ export function CollectionsProvider({ children }: { children: ReactNode }) {
 		? MOCK_ORG_ID
 		: session?.session?.activeOrganizationId;
 
+	// The org actually on screen, which is NOT the same as the session's active
+	// org during a switch. better-auth registers `/organization/set-active`
+	// against its session signal, so `useSession` refetches on its own and
+	// `activeOrganizationId` flips the moment the server commits — long before
+	// the destination's collections are preloaded. Rendering straight off that
+	// value would swap the whole UI onto empty, not-yet-synced collections.
+	// Advancing this only once the destination is warm keeps the old
+	// "never show a half-loaded org" guarantee without unmounting the tree.
+	const [displayedOrganizationId, setDisplayedOrganizationId] = useState<
+		string | null
+	>(activeOrganizationId ?? null);
+
 	const switchOrganization = useCallback(
 		async (organizationId: string) => {
-			if (organizationId === activeOrganizationId) return;
+			if (organizationId === displayedOrganizationId) return;
 			if (switchInFlightRef.current) return;
 			switchInFlightRef.current = true;
 			try {
 				await authClient.organization.setActive({ organizationId });
 				await preloadCollections(organizationId);
 				await refetchSession();
+				setDisplayedOrganizationId(organizationId);
 			} finally {
 				switchInFlightRef.current = false;
 			}
 		},
-		[activeOrganizationId, refetchSession],
+		[displayedOrganizationId, refetchSession],
 	);
 
+	// The session's org can also change without going through
+	// `switchOrganization` — accepting an invitation, another client, a
+	// restored session. Warm the destination first, then show it, so those
+	// paths land on a synced org too instead of an empty one.
 	useEffect(() => {
-		preloadActiveOrganizationCollections(activeOrganizationId);
-		// Once the active org is current (its collections are already cached by the
-		// `collections` memo above, which runs during render), evict every prior
-		// org's set to free the synced tables they hold. This effect is the single
-		// trigger for all switch paths, including callers that set the active org
-		// directly without going through `switchOrganization`.
-		if (activeOrganizationId) {
-			evictInactiveOrgCollections(activeOrganizationId);
+		if (!activeOrganizationId) return;
+		if (activeOrganizationId === displayedOrganizationId) return;
+		if (switchInFlightRef.current) return;
+		let cancelled = false;
+		void preloadCollections(activeOrganizationId)
+			.catch((error) => {
+				console.error(
+					"[collections-provider] Failed to preload active org collections:",
+					error,
+				);
+			})
+			.finally(() => {
+				if (!cancelled) setDisplayedOrganizationId(activeOrganizationId);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [activeOrganizationId, displayedOrganizationId]);
+
+	useEffect(() => {
+		// Evict on the DISPLAYED org, never the session's: evicting on the
+		// session value would tear down the collections still mounted on screen
+		// the instant the server commits a switch.
+		if (displayedOrganizationId) {
+			evictInactiveOrgCollections(displayedOrganizationId);
 		}
-	}, [activeOrganizationId]);
+	}, [displayedOrganizationId]);
 
 	const collections = useMemo(
-		() => (activeOrganizationId ? getCollections(activeOrganizationId) : null),
-		[activeOrganizationId],
+		() =>
+			displayedOrganizationId ? getCollections(displayedOrganizationId) : null,
+		[displayedOrganizationId],
 	);
 
 	const contextValue = useMemo<CollectionsContextType | null>(

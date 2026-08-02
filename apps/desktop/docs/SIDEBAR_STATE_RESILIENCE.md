@@ -122,12 +122,18 @@ to the session row on a transient empty read
 (`resolve-session-organization-state.ts` in `packages/auth`) — is still
 open. In production this doesn't self-heal: the server keeps returning null.
 
-### 5. Org switch — BY DESIGN
+### 5. Org switch — FIXED
 
-`CollectionsProvider` returns null during `isSwitching`; full teardown and
-rebuild. Verified via `organization.setActive` round-trip: full clear, full
-recovery. Anything that *looks* like an org change to the app produces a
-total sidebar clear — which is why vector 4 reads as "random".
+Previously `CollectionsProvider` returned null during `isSwitching`: a full
+teardown and rebuild, which blanked the whole window for as long as the
+destination org took to preload. The guarantee it bought — never rendering a
+half-synced org — now comes from an explicit `displayedOrganizationId` that
+only advances once the destination is warm, so the previous org stays on
+screen instead of nothing. Note the session's active org is NOT that value:
+better-auth signals a session refetch on `/organization/set-active`, so it
+flips as soon as the server commits. Eviction is keyed to the displayed org
+for the same reason. Anything that *looks* like an org change to the app
+still swaps the sidebar wholesale — which is why vector 4 reads as "random".
 
 ## Status summary
 
