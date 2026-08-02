@@ -1,5 +1,4 @@
 import { useCallback, useState } from "react";
-import { apiTrpcClient } from "renderer/lib/api-trpc-client";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { setHostServiceSecret } from "renderer/lib/host-service-auth";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
@@ -30,26 +29,33 @@ export interface MoveProjectToOrganizationResult {
 }
 
 /**
- * Moves a project — its worktrees, its cloud rows and its sidebar placement —
- * from the active organization to another one the user belongs to.
+ * Moves a project — its worktrees and its sidebar placement — from the active
+ * organization to another one the user belongs to.
  *
- * Which org a project belongs to locally is decided by which host database
- * holds its row (`~/.superset/host/<orgId>/host.db` — there is no org column),
- * so a move is a re-registration on the target org's host rather than an
- * update. The project id is preserved throughout: worktrees live under
- * `~/.superset/worktrees/<projectId>/`, so keeping the id means nothing on
- * disk has to move.
+ * The move is entirely local. Which org owns a project is decided by which
+ * host database holds its row (`~/.superset/host/<orgId>/host.db` — there is
+ * no org column), so moving it means re-registering on the destination org's
+ * host, not updating a field. The project id is preserved throughout:
+ * worktrees live under `~/.superset/worktrees/<projectId>/`, so keeping the id
+ * means nothing on disk moves.
+ *
+ * Deliberately no cloud write. `plans/remove-cloud-project-model.md` retires
+ * `v2_projects` and the `v2Project` router, so a project's org is becoming
+ * host-local by design; re-keying cloud rows here would add to a router with a
+ * deletion date. The residue is the destination's `v2_workspaces` rows still
+ * carrying the old org until those tables go — invisible in the sidebar, which
+ * reads the host fan-out.
  *
  * Order is load-bearing:
- *  1. start the target host FIRST — it registers the machine in the target org
- *     (`host.ensure`), which the cloud move needs before it can re-key
- *     workspaces across the `(organization_id, host_id)` foreign key;
- *  2. move the cloud rows;
- *  3. adopt the project and its worktrees onto the target host;
- *  4. copy the sidebar placement and hide the project in the source org;
- *  5. detach from the source host LAST, and only via `project.detach`, which
+ *  1. start the destination host first, so it exists to receive the project;
+ *  2. register the project and adopt its worktrees there, keeping every id;
+ *  3. copy the sidebar placement into the destination org;
+ *  4. detach from the source host LAST, and only via `project.detach`, which
  *     drops rows without running `git worktree remove` — the ordinary remove
  *     would delete the worktrees just adopted.
+ *
+ * Nothing on the source changes until step 4, so a failure earlier leaves the
+ * project exactly where it started.
  *
  * Live terminals and agent sessions do not survive: they belong to the source
  * org's pty daemon and there is no way to re-parent them across orgs.
@@ -123,23 +129,15 @@ export function useMoveProjectToOrganization() {
 				const targetHostUrl = await waitForTargetHost(targetOrganizationId);
 				const targetClient = getHostServiceClientByUrl(targetHostUrl);
 
-				const cloudMove =
-					await apiTrpcClient.v2Project.moveToOrganization.mutate({
-						id: projectId,
-						targetOrganizationId,
-					});
-
-				// From here the cloud row (if there is one) already sits in the
-				// destination org while the local rows are still on the source
-				// host. Anything that throws before the local side is registered
-				// leaves the project split between the two, so undo the cloud
-				// move rather than leaving it that way.
+				// Nothing has changed yet — the destination host is running but
+				// holds no rows. Anything that throws before the source is
+				// detached leaves the project exactly where it started.
 				let targetSetupSucceeded = false;
-				const undoCloudMove = async (cause: unknown): Promise<never> => {
+				const unwindDestination = async (cause: unknown): Promise<never> => {
 					// `project.setup` may already have run, leaving the destination
-					// host holding a registration for a project that is about to
-					// belong to the source org again. Drop it — detach touches rows
-					// only, so the worktrees are untouched either way.
+					// host registered for a project that still belongs to the source.
+					// Drop it — detach touches rows only, so the worktrees are
+					// untouched either way.
 					if (targetSetupSucceeded) {
 						try {
 							await targetClient.project.detach.mutate({ projectId });
@@ -150,25 +148,12 @@ export function useMoveProjectToOrganization() {
 							);
 						}
 					}
-					if (cloudMove.cloudRowMissing || !activeOrganizationId) throw cause;
-					try {
-						await apiTrpcClient.v2Project.moveToOrganization.mutate({
-							id: projectId,
-							targetOrganizationId: activeOrganizationId,
-						});
-					} catch (undoError) {
-						console.error("[move-project] rollback failed", undoError);
-						throw new Error(
-							`The move failed part way and couldn't be undone. The project now belongs to the destination organization in the cloud but is still set up on this device under the old one. Switch to the destination organization and move it back. Original error: ${
-								cause instanceof Error ? cause.message : String(cause)
-							}`,
-						);
-					}
 					throw cause;
 				};
 
-				// `origin` skips the cloud lookup: the row has already moved, and
-				// the host would otherwise resolve it against its own org.
+				// `origin` supplies the repo coordinates directly, so the host
+				// never asks the cloud who owns this project — which org holds it
+				// is decided by which host database has the row.
 				// `mainWorkspaceId` keeps the repo's own checkout on the id it
 				// already had — without it setup mints a new one and every piece
 				// of local state keyed to the old id (pane layout, pins) is
@@ -200,7 +185,7 @@ export function useMoveProjectToOrganization() {
 						});
 					}
 				} catch (error) {
-					await undoCloudMove(error);
+					await unwindDestination(error);
 				}
 
 				// Adopt each worktree in place, keeping its id and path. One that
@@ -227,8 +212,8 @@ export function useMoveProjectToOrganization() {
 					}
 				}
 
-				// Past this point the project is live in the destination — cloud
-				// rows moved, host registered, worktrees adopted. What is left is
+				// Past this point the project is live in the destination — host
+				// registered, worktrees adopted. What is left is
 				// tidying the source, so a failure here is not worth unwinding a
 				// good move; it leaves the project listed in both orgs, and the
 				// error has to say that rather than read like the move failed.
