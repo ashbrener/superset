@@ -58,6 +58,16 @@ export function applyProjectSidebarState(
 	collections: SidebarCollections,
 	projectId: string,
 	state: ProjectSidebarState,
+	/**
+	 * Shells to re-open per workspace on the other side, keyed by workspace id.
+	 * The PTYs themselves die with the source org's daemon; this queue is the
+	 * same one the v1→v2 migration uses to bring terminals back lazily at the
+	 * right directory on first open.
+	 */
+	terminalsToReopen: Map<
+		string,
+		WorkspaceLocalStateRow["pendingMigratedTerminals"]
+	> = new Map(),
 ): void {
 	if (!collections.v2SidebarProjects.get(projectId)) {
 		const existingProjects = Array.from(
@@ -95,7 +105,7 @@ export function applyProjectSidebarState(
 				// so `claude --resume` still finds it.
 				paneLayout: createEmptyPaneLayout(),
 				workspaceRunTerminals: {},
-				pendingMigratedTerminals: [],
+				pendingMigratedTerminals: terminalsToReopen.get(row.workspaceId) ?? [],
 				sidebarState: { ...row.sidebarState, pinnedAt },
 			});
 			continue;
@@ -108,7 +118,8 @@ export function applyProjectSidebarState(
 			collections.v2WorkspaceLocalState.update(row.workspaceId, (draft) => {
 				draft.paneLayout = createEmptyPaneLayout();
 				draft.workspaceRunTerminals = {};
-				draft.pendingMigratedTerminals = [];
+				draft.pendingMigratedTerminals =
+					terminalsToReopen.get(row.workspaceId) ?? [];
 				draft.sidebarState.projectId = projectId;
 				draft.sidebarState.isHidden = false;
 				draft.sidebarState.sectionId = row.sidebarState.sectionId;

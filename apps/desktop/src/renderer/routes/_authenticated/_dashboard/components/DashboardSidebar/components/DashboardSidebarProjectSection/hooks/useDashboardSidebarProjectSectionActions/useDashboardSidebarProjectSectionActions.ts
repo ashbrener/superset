@@ -76,8 +76,11 @@ export function useDashboardSidebarProjectSectionActions({
 				})),
 		[organizations, activeOrganizationId],
 	);
-	const { moveProjectToOrganization, isMoving: isMovingToOrganization } =
-		useMoveProjectToOrganization();
+	const {
+		moveProjectToOrganization,
+		getMoveImpact,
+		isMoving: isMovingToOrganization,
+	} = useMoveProjectToOrganization();
 
 	const [isRenaming, setIsRenaming] = useState(false);
 	const [renameValue, setRenameValue] = useState(project.name);
@@ -153,15 +156,24 @@ export function useDashboardSidebarProjectSectionActions({
 		});
 	};
 
-	const confirmMoveToOrganization = (organizationId: string) => {
+	const confirmMoveToOrganization = async (organizationId: string) => {
 		const organization = moveTargetOrganizations.find(
 			(candidate) => candidate.id === organizationId,
 		);
 		if (!organization) return;
+		// Ask what is actually running before warning about it. A blanket
+		// "terminals will close" on a project with nothing open teaches people
+		// to click through the one time it matters.
+		const impact = await getMoveImpact(project.id).catch(() => null);
+		const terminalWarning =
+			impact && impact.terminalCount > 0
+				? ` ${impact.terminalCount} running terminal${impact.terminalCount === 1 ? "" : "s"} (${impact.workspacesWithTerminals.join(", ")}) will be closed and re-opened on the other side — anything mid-run stops, so save or hand off first.`
+				: impact
+					? " Nothing is running in it right now."
+					: "";
 		alert({
 			title: `Move to ${organization.name}?`,
-			description:
-				"The repo and its worktrees move across with their branches intact — nothing on disk changes. Running terminals and agent sessions close, and the project leaves this organization.",
+			description: `The repo and its worktrees move across with their branches intact — nothing on disk changes.${terminalWarning}`,
 			actions: [
 				{ label: "Cancel", variant: "outline", onClick: () => {} },
 				{

@@ -24,6 +24,14 @@ export interface MoveProjectToOrganizationArgs {
 	targetOrganizationId: string;
 }
 
+/** What a move is about to cost, so the confirmation can be specific. */
+export interface MoveImpact {
+	/** Live terminal sessions across the project's workspaces. */
+	terminalCount: number;
+	/** Workspaces that currently hold at least one live session. */
+	workspacesWithTerminals: string[];
+}
+
 export interface MoveProjectToOrganizationResult {
 	/** Worktrees the target host refused to adopt, by workspace name. */
 	skippedWorkspaces: string[];
@@ -117,6 +125,71 @@ export function useMoveProjectToOrganization() {
 		[restartHostService, utils],
 	);
 
+	/**
+	 * Live terminal sessions per workspace, from the host that currently serves
+	 * them. Used both to tell the user what a move will close and to queue the
+	 * same shells for re-opening on the other side.
+	 */
+	const collectLiveTerminals = useCallback(
+		async (
+			hostUrl: string,
+			workspaces: Array<{ id: string; name: string }>,
+		): Promise<Map<string, { name: string; terminalIds: string[] }>> => {
+			const client = getHostServiceClientByUrl(hostUrl);
+			const byWorkspace = new Map<
+				string,
+				{ name: string; terminalIds: string[] }
+			>();
+			for (const workspace of workspaces) {
+				try {
+					const { sessions } = await client.terminal.listSessions.query({
+						workspaceId: workspace.id,
+					});
+					const live = sessions
+						.filter((session) => !session.exited)
+						.map((session) => session.terminalId);
+					if (live.length > 0) {
+						byWorkspace.set(workspace.id, {
+							name: workspace.name,
+							terminalIds: live,
+						});
+					}
+				} catch (error) {
+					// A host that can't answer shouldn't block the move; the worst
+					// case is a quieter warning and no terminals queued back.
+					console.warn(
+						"[move-project] terminal list failed",
+						workspace.id,
+						error,
+					);
+				}
+			}
+			return byWorkspace;
+		},
+		[],
+	);
+
+	/** Pre-flight for the confirmation dialog — no writes. */
+	const getMoveImpact = useCallback(
+		async (projectId: string): Promise<MoveImpact> => {
+			const hostUrl = activeHostUrl ?? (await waitForHostReady());
+			if (!hostUrl) return { terminalCount: 0, workspacesWithTerminals: [] };
+			const client = getHostServiceClientByUrl(hostUrl);
+			const workspaces = (await client.workspace.list.query()).filter(
+				(workspace) => workspace.projectId === projectId,
+			);
+			const live = await collectLiveTerminals(hostUrl, workspaces);
+			return {
+				terminalCount: [...live.values()].reduce(
+					(total, entry) => total + entry.terminalIds.length,
+					0,
+				),
+				workspacesWithTerminals: [...live.values()].map((entry) => entry.name),
+			};
+		},
+		[activeHostUrl, collectLiveTerminals, waitForHostReady],
+	);
+
 	const moveProjectToOrganization = useCallback(
 		async ({
 			projectId,
@@ -141,6 +214,13 @@ export function useMoveProjectToOrganization() {
 				const allWorkspaces = await sourceClient.workspace.list.query();
 				const projectWorkspaces = allWorkspaces.filter(
 					(workspace) => workspace.projectId === projectId,
+				);
+
+				// Read the live sessions BEFORE the destination host starts or the
+				// source is detached — after that they're gone and unknowable.
+				const liveTerminals = await collectLiveTerminals(
+					sourceHostUrl,
+					projectWorkspaces,
 				);
 
 				const targetHostUrl = await waitForTargetHost(targetOrganizationId);
@@ -240,10 +320,23 @@ export function useMoveProjectToOrganization() {
 					// with no rollback, so a torn write would persist.
 					const targetCollections = getCollections(targetOrganizationId);
 					await preloadCollections(targetOrganizationId);
+					// Queue the same shells to re-open at the workspace's own
+					// directory. Fresh terminal ids: the destination daemon has its
+					// own id space, and `createSession` is idempotent by id.
+					const terminalsToReopen = new Map(
+						[...liveTerminals].map(([workspaceId, entry]) => [
+							workspaceId,
+							entry.terminalIds.map(() => ({
+								terminalId: crypto.randomUUID(),
+								cwd: null,
+							})),
+						]),
+					);
 					applyProjectSidebarState(
 						targetCollections,
 						projectId,
 						collectProjectSidebarState(collections, projectId),
+						terminalsToReopen,
 					);
 
 					// Leave the workspace route before its local state disappears,
@@ -289,11 +382,12 @@ export function useMoveProjectToOrganization() {
 			collections,
 			navigateAwayFromWorkspace,
 			queryClient,
+			collectLiveTerminals,
 			removeProjectFromSidebar,
 			waitForHostReady,
 			waitForTargetHost,
 		],
 	);
 
-	return { moveProjectToOrganization, isMoving };
+	return { moveProjectToOrganization, getMoveImpact, isMoving };
 }
