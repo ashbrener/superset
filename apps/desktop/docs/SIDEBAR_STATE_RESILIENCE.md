@@ -125,15 +125,15 @@ open. In production this doesn't self-heal: the server keeps returning null.
 ### 5. Org switch — FIXED
 
 Previously `CollectionsProvider` returned null during `isSwitching`: a full
-teardown and rebuild, which blanked the whole window for as long as the
-destination org took to preload. The guarantee it bought — never rendering a
-half-synced org — now comes from an explicit `displayedOrganizationId` that
-only advances once the destination is warm, so the previous org stays on
-screen instead of nothing. Note the session's active org is NOT that value:
-better-auth signals a session refetch on `/organization/set-active`, so it
-flips as soon as the server commits. Eviction is keyed to the displayed org
-for the same reason. Anything that *looks* like an org change to the app
-still swaps the sidebar wholesale — which is why vector 4 reads as "random".
+teardown and rebuild, which left the window blank for the length of the
+switch. #6135 removed the preload gate, so that wait is now two round trips
+rather than the slowest of ~22 Electric shapes; this stops the window being
+blank for it at all. The tree stays mounted and is veiled while the switch
+runs, because consumers that read the session directly (the org menu, the
+host service) name the destination before the collections swap. Anything
+that *looks* like an org change to the app still swaps the sidebar
+wholesale — which is why vector 4 reads as "random".
+
 
 ## Status summary
 
