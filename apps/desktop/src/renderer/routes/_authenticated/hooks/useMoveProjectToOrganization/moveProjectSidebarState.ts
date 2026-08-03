@@ -1,3 +1,4 @@
+import { createEmptyPaneLayout } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState/sidebarMutations";
 import type { AppCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider/collections";
 import {
 	type DashboardSidebarProjectRow,
@@ -86,6 +87,15 @@ export function applyProjectSidebarState(
 		if (!existing) {
 			collections.v2WorkspaceLocalState.insert({
 				...row,
+				// Panes and run-terminals reference PTY sessions owned by the
+				// source org's daemon. They cannot be reattached from here, and
+				// carrying them over lands the workspace with terminals stuck on
+				// "Disconnected" and a Reconnect that can never succeed. Start
+				// clean instead — the agent history on disk is keyed by directory,
+				// so `claude --resume` still finds it.
+				paneLayout: createEmptyPaneLayout(),
+				workspaceRunTerminals: {},
+				pendingMigratedTerminals: [],
 				sidebarState: { ...row.sidebarState, pinnedAt },
 			});
 			continue;
@@ -96,6 +106,9 @@ export function applyProjectSidebarState(
 		// silently missing.
 		if (existing.sidebarState.isHidden) {
 			collections.v2WorkspaceLocalState.update(row.workspaceId, (draft) => {
+				draft.paneLayout = createEmptyPaneLayout();
+				draft.workspaceRunTerminals = {};
+				draft.pendingMigratedTerminals = [];
 				draft.sidebarState.projectId = projectId;
 				draft.sidebarState.isHidden = false;
 				draft.sidebarState.sectionId = row.sidebarState.sectionId;
