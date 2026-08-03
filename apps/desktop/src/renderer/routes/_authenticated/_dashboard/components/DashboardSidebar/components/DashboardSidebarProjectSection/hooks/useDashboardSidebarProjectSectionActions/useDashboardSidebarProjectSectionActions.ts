@@ -165,12 +165,15 @@ export function useDashboardSidebarProjectSectionActions({
 		// "terminals will close" on a project with nothing open teaches people
 		// to click through the one time it matters.
 		const impact = await getMoveImpact(project.id).catch(() => null);
-		const terminalWarning =
-			impact && impact.terminalCount > 0
-				? ` ${impact.terminalCount} running terminal${impact.terminalCount === 1 ? "" : "s"} (${impact.workspacesWithTerminals.join(", ")}) will be closed and re-opened on the other side — anything mid-run stops, so save or hand off first.`
-				: impact
-					? " Nothing is running in it right now."
-					: "";
+		const terminalWarning = !impact
+			? ""
+			: impact.terminalCount === 0
+				? " Nothing is running in it right now."
+				: ` ${impact.terminalCount} running terminal${impact.terminalCount === 1 ? "" : "s"} will be closed and re-opened on the other side — ${impact.workspaceBreakdown
+						.map((entry) => `${entry.name} (${entry.terminalCount})`)
+						.join(
+							", ",
+						)}. Some may be running in the background with no pane open. Anything mid-run stops, so save or hand off first.`;
 		alert({
 			title: `Move to ${organization.name}?`,
 			description: `The repo and its worktrees move across with their branches intact — nothing on disk changes.${terminalWarning}`,

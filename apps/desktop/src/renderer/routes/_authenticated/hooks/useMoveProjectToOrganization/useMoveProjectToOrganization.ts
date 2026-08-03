@@ -28,8 +28,12 @@ export interface MoveProjectToOrganizationArgs {
 export interface MoveImpact {
 	/** Live terminal sessions across the project's workspaces. */
 	terminalCount: number;
-	/** Workspaces that currently hold at least one live session. */
-	workspacesWithTerminals: string[];
+	/**
+	 * Per workspace, so the count can be accounted for. Sessions running in
+	 * the background — no pane attached — are counted too, which is why this
+	 * total can exceed the terminals visibly open.
+	 */
+	workspaceBreakdown: Array<{ name: string; terminalCount: number }>;
 }
 
 export interface MoveProjectToOrganizationResult {
@@ -173,7 +177,7 @@ export function useMoveProjectToOrganization() {
 	const getMoveImpact = useCallback(
 		async (projectId: string): Promise<MoveImpact> => {
 			const hostUrl = activeHostUrl ?? (await waitForHostReady());
-			if (!hostUrl) return { terminalCount: 0, workspacesWithTerminals: [] };
+			if (!hostUrl) return { terminalCount: 0, workspaceBreakdown: [] };
 			const client = getHostServiceClientByUrl(hostUrl);
 			const workspaces = (await client.workspace.list.query()).filter(
 				(workspace) => workspace.projectId === projectId,
@@ -184,7 +188,10 @@ export function useMoveProjectToOrganization() {
 					(total, entry) => total + entry.terminalIds.length,
 					0,
 				),
-				workspacesWithTerminals: [...live.values()].map((entry) => entry.name),
+				workspaceBreakdown: [...live.values()].map((entry) => ({
+					name: entry.name,
+					terminalCount: entry.terminalIds.length,
+				})),
 			};
 		},
 		[activeHostUrl, collectLiveTerminals, waitForHostReady],
