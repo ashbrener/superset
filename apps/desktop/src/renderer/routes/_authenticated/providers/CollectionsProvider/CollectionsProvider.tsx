@@ -23,23 +23,12 @@ type CollectionsContextType = ReturnType<typeof getCollections> & {
 
 const CollectionsContext = createContext<CollectionsContextType | null>(null);
 
-export function preloadActiveOrganizationCollections(
-	activeOrganizationId: string | null | undefined,
-): void {
-	if (!activeOrganizationId) return;
-	void preloadCollections(activeOrganizationId).catch((error) => {
-		console.error(
-			"[collections-provider] Failed to preload active org collections:",
-			error,
-		);
-	});
-}
-
 export function CollectionsProvider({ children }: { children: ReactNode }) {
 	const { data: session, refetch: refetchSession } = authClient.useSession();
-	// A ref, not state: nothing renders differently while a switch is in
-	// flight, it only stops two switches overlapping.
+	// Both a ref and state: the ref stops two switches overlapping without
+	// waiting for a render, the state drives the transition veil below.
 	const switchInFlightRef = useRef(false);
+	const [isSwitching, setIsSwitching] = useState(false);
 	const activeOrganizationId = env.SKIP_ENV_VALIDATION
 		? MOCK_ORG_ID
 		: session?.session?.activeOrganizationId;
@@ -61,13 +50,21 @@ export function CollectionsProvider({ children }: { children: ReactNode }) {
 			if (organizationId === displayedOrganizationId) return;
 			if (switchInFlightRef.current) return;
 			switchInFlightRef.current = true;
+			setIsSwitching(true);
 			try {
 				await authClient.organization.setActive({ organizationId });
+				// `preloadCollections` settles rather than rejects on a collection
+				// that fails to sync, and that is deliberate here: blocking the
+				// switch on every shape succeeding would strand you on the old org
+				// whenever one table is unreachable — the hang this change exists
+				// to remove. Collections render cache-first, so a table that
+				// hasn't arrived shows its own empty state and fills in later.
 				await preloadCollections(organizationId);
 				await refetchSession();
 				setDisplayedOrganizationId(organizationId);
 			} finally {
 				switchInFlightRef.current = false;
+				setIsSwitching(false);
 			}
 		},
 		[displayedOrganizationId, refetchSession],
@@ -130,6 +127,18 @@ export function CollectionsProvider({ children }: { children: ReactNode }) {
 	return (
 		<CollectionsContext.Provider value={contextValue}>
 			{children}
+			{/* Mid-switch the tree still renders the org being left, while
+			    consumers that read the session directly (the org menu, the host
+			    service) already name the destination. Rather than let someone act
+			    on that mixture, veil it: the chrome stays visible so the app
+			    doesn't look dead, but it can't be clicked. Fixed and a sibling —
+			    wrapping `children` would disturb the layout it sits in. */}
+			{isSwitching && (
+				<div
+					aria-busy="true"
+					className="fixed inset-0 z-50 cursor-progress bg-background/40"
+				/>
+			)}
 		</CollectionsContext.Provider>
 	);
 }

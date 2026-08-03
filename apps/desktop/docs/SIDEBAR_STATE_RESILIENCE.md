@@ -144,4 +144,4 @@ still swaps the sidebar wholesale — which is why vector 4 reads as "random".
 | Host restart / port churn | chips blank bar-wide; rows survive | fixed here (identity-keyed caches) |
 | Coordinator no-retry wedge | host-service down until manual restart | open — file ticket |
 | Session null write-back | whole app remounts to /create-organization | open (`packages/auth`) |
-| Org switch | full clear + rebuild | by design |
+| Org switch | window blank until the destination org preloaded | fixed here (previous org stays on screen) |
