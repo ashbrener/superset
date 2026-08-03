@@ -6,7 +6,6 @@ import {
 	useEffect,
 	useMemo,
 	useRef,
-	useState,
 } from "react";
 import { env } from "renderer/env.renderer";
 import { authClient } from "renderer/lib/auth-client";
@@ -37,10 +36,9 @@ export function preloadActiveOrganizationCollections(
 
 export function CollectionsProvider({ children }: { children: ReactNode }) {
 	const { data: session, refetch: refetchSession } = authClient.useSession();
-	// The ref stops two switches overlapping without waiting for a render; the
-	// state drives the transition veil at the bottom of this file.
+	// A ref, not state: nothing renders differently while a switch is in
+	// flight, it only stops two switches overlapping.
 	const switchInFlightRef = useRef(false);
-	const [isSwitching, setIsSwitching] = useState(false);
 	const activeOrganizationId = env.SKIP_ENV_VALIDATION
 		? MOCK_ORG_ID
 		: session?.session?.activeOrganizationId;
@@ -50,14 +48,12 @@ export function CollectionsProvider({ children }: { children: ReactNode }) {
 			if (organizationId === activeOrganizationId) return;
 			if (switchInFlightRef.current) return;
 			switchInFlightRef.current = true;
-			setIsSwitching(true);
 			try {
 				await authClient.organization.setActive({ organizationId });
 				await preloadCollections(organizationId);
 				await refetchSession();
 			} finally {
 				switchInFlightRef.current = false;
-				setIsSwitching(false);
 			}
 		},
 		[activeOrganizationId, refetchSession],
@@ -97,18 +93,6 @@ export function CollectionsProvider({ children }: { children: ReactNode }) {
 	return (
 		<CollectionsContext.Provider value={contextValue}>
 			{children}
-			{/* Mid-switch the tree still renders the org being left, while
-			    consumers that read the session directly (the org menu, the host
-			    service) already name the destination. Rather than let someone act
-			    on that mixture, veil it: the chrome stays visible so the app
-			    doesn't look dead, but it can't be clicked. Fixed and a sibling —
-			    wrapping `children` would disturb the layout it sits in. */}
-			{isSwitching && (
-				<div
-					aria-busy="true"
-					className="fixed inset-0 z-50 cursor-progress bg-background/40"
-				/>
-			)}
 		</CollectionsContext.Provider>
 	);
 }

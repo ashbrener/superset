@@ -126,14 +126,11 @@ open. In production this doesn't self-heal: the server keeps returning null.
 
 Previously `CollectionsProvider` returned null during `isSwitching`: a full
 teardown and rebuild, which left the window blank for the length of the
-switch. #6135 removed the preload gate, so that wait is now two round trips
-rather than the slowest of ~22 Electric shapes; this stops the window being
-blank for it at all. The tree stays mounted and is veiled while the switch
-runs, because consumers that read the session directly (the org menu, the
-host service) name the destination before the collections swap. Anything
-that *looks* like an org change to the app still swaps the sidebar
-wholesale — which is why vector 4 reads as "random".
-
+switch. #6135 removed the preload gate, so the destination renders
+cache-first while its shapes stream; this stops the window being blank for
+the round trips either side. Anything that *looks* like an org change to the
+app still swaps the sidebar wholesale — which is why vector 4 reads as
+"random".
 
 ## Status summary
 
