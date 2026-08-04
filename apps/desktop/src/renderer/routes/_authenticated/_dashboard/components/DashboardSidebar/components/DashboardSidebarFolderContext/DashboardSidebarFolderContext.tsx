@@ -7,6 +7,8 @@ interface DashboardSidebarFolderContextValue {
 	moveProjectToFolder: (projectId: string, folderId: string | null) => void;
 	/** Create a folder and move the project straight into it. */
 	createFolderForProject: (projectId: string) => void;
+	/** Create a folder and move every given project into it (bulk select). */
+	createFolderForProjects: (projectIds: string[]) => void;
 }
 
 const DashboardSidebarFolderContext =
@@ -41,6 +43,7 @@ export function useDashboardSidebarFolders(): DashboardSidebarFolderContextValue
 			folders: [],
 			moveProjectToFolder: () => {},
 			createFolderForProject: () => {},
+			createFolderForProjects: () => {},
 		}
 	);
 }

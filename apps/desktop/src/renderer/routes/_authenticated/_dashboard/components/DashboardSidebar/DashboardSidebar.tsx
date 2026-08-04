@@ -49,7 +49,10 @@ import { useDashboardSidebarData } from "./hooks/useDashboardSidebarData";
 import { useDashboardSidebarShortcuts } from "./hooks/useDashboardSidebarShortcuts";
 import { DashboardSidebarHoverProvider } from "./providers/DashboardSidebarHoverProvider";
 import { DashboardSidebarPortsProvider } from "./providers/DashboardSidebarPortsProvider";
-import { DashboardSidebarSelectionProvider } from "./providers/DashboardSidebarSelectionProvider";
+import {
+	DashboardSidebarSelectionProvider,
+	useDashboardSidebarSelection,
+} from "./providers/DashboardSidebarSelectionProvider";
 import type { DashboardSidebarProject } from "./types";
 import {
 	folderAwareCollisionDetection,
@@ -87,6 +90,8 @@ const SortableProjectWrapper = memo(function SortableProjectWrapper({
 		transition,
 		isDragging,
 	} = useSortable({ id: project.id });
+	const { isProjectSelected, selectProjectFromEvent } =
+		useDashboardSidebarSelection();
 
 	return (
 		<div
@@ -106,6 +111,8 @@ const SortableProjectWrapper = memo(function SortableProjectWrapper({
 				onToggleCollapse={onToggleCollapse}
 				dragHandleListeners={listeners}
 				dragHandleAttributes={attributes}
+				isSelected={isProjectSelected(project.id)}
+				onSelectionClick={(event) => selectProjectFromEvent(event, project.id)}
 			/>
 		</div>
 	);
@@ -137,13 +144,21 @@ export function DashboardSidebar({
 		null,
 	);
 
-	const createFolderForProject = useCallback(
-		(projectId: string) => {
+	const createFolderForProjects = useCallback(
+		(projectIds: string[]) => {
+			if (projectIds.length === 0) return;
 			const folderId = createFolder();
-			moveProjectToFolder(projectId, folderId);
+			for (const projectId of projectIds) {
+				moveProjectToFolder(projectId, folderId);
+			}
 			setAutoRenameFolderId(folderId);
 		},
 		[createFolder, moveProjectToFolder],
+	);
+
+	const createFolderForProject = useCallback(
+		(projectId: string) => createFolderForProjects([projectId]),
+		[createFolderForProjects],
 	);
 
 	// "New project folder" from the PROJECTS header: create an empty folder and
@@ -154,8 +169,18 @@ export function DashboardSidebar({
 	}, [createFolder]);
 
 	const folderContextValue = useMemo(
-		() => ({ folders, moveProjectToFolder, createFolderForProject }),
-		[folders, moveProjectToFolder, createFolderForProject],
+		() => ({
+			folders,
+			moveProjectToFolder,
+			createFolderForProject,
+			createFolderForProjects,
+		}),
+		[
+			folders,
+			moveProjectToFolder,
+			createFolderForProject,
+			createFolderForProjects,
+		],
 	);
 	const navigate = useNavigate();
 	const matchRoute = useMatchRoute();
@@ -319,6 +344,7 @@ export function DashboardSidebar({
 	return (
 		<DashboardSidebarSelectionProvider
 			availableWorkspaceIds={selectableWorkspaceIds}
+			orderedProjectIds={sortableProjectIds}
 		>
 			<DashboardSidebarFolderProvider value={folderContextValue}>
 				<DashboardSidebarSectionRenameProvider>

@@ -4,6 +4,7 @@ import type {
 } from "@dnd-kit/core";
 import { AnimatePresence, motion } from "framer-motion";
 import { useMemo } from "react";
+import type { WorkspaceSelectionEvent } from "../../providers/DashboardSidebarSelectionProvider";
 import type { DashboardSidebarProject } from "../../types";
 import { getProjectChildrenWorkspaces } from "../../utils/projectChildren";
 import { useDashboardSidebarFolders } from "../DashboardSidebarFolderContext";
@@ -23,6 +24,9 @@ interface DashboardSidebarProjectSectionProps {
 	onToggleCollapse: (projectId: string) => void;
 	dragHandleListeners?: DraggableSyntheticListeners;
 	dragHandleAttributes?: DraggableAttributes;
+	/** Part of the sidebar's bulk project selection. */
+	isSelected?: boolean;
+	onSelectionClick?: (event: WorkspaceSelectionEvent) => boolean;
 }
 
 export function DashboardSidebarProjectSection({
@@ -34,6 +38,8 @@ export function DashboardSidebarProjectSection({
 	onToggleCollapse,
 	dragHandleListeners,
 	dragHandleAttributes,
+	isSelected = false,
+	onSelectionClick,
 }: DashboardSidebarProjectSectionProps) {
 	const flattenedCollapsedWorkspaces = useMemo(
 		() => getProjectChildrenWorkspaces(project.children),
@@ -140,6 +146,8 @@ export function DashboardSidebarProjectSection({
 					onStartRename={startRename}
 					onToggleCollapse={() => onToggleCollapse(project.id)}
 					onNewWorkspace={handleNewWorkspace}
+					isSelected={isSelected}
+					onSelectionClick={onSelectionClick}
 					{...(dragHandleAttributes ?? {})}
 					{...(dragHandleListeners ?? {})}
 				/>
