@@ -1,5 +1,4 @@
 import {
-	closestCenter,
 	DndContext,
 	type DragEndEvent,
 	DragOverlay,
@@ -7,7 +6,6 @@ import {
 	MeasuringStrategy,
 	MouseSensor,
 	TouchSensor,
-	useDroppable,
 	useSensor,
 	useSensors,
 } from "@dnd-kit/core";
@@ -43,14 +41,19 @@ import { DashboardSidebarPortsList } from "./components/DashboardSidebarPortsLis
 import { DashboardSidebarProjectSection } from "./components/DashboardSidebarProjectSection";
 import { DashboardSidebarSectionRenameProvider } from "./components/DashboardSidebarSectionRenameContext";
 import { DashboardSidebarWorkspacesHeader } from "./components/DashboardSidebarWorkspacesHeader";
+import { FolderContents } from "./components/FolderContents";
+import { RootDropZone } from "./components/RootDropZone";
 import { V2SetupScriptCard } from "./components/V2SetupScriptCard";
 import { useDashboardSidebarData } from "./hooks/useDashboardSidebarData";
 import { useDashboardSidebarShortcuts } from "./hooks/useDashboardSidebarShortcuts";
 import { DashboardSidebarHoverProvider } from "./providers/DashboardSidebarHoverProvider";
 import { DashboardSidebarPortsProvider } from "./providers/DashboardSidebarPortsProvider";
-import type { DashboardSidebarFolder, DashboardSidebarProject } from "./types";
-import { hasCustomColor } from "./utils/folderColor";
-import { FOLDER_DROP_ROOT, parseFolderDropId } from "./utils/folderDnd";
+import type { DashboardSidebarProject } from "./types";
+import {
+	folderAwareCollisionDetection,
+	parseFolderDropId,
+} from "./utils/folderDnd";
+import { groupProjectsByFolder } from "./utils/groupProjectsByFolder";
 
 interface DashboardSidebarProps {
 	isCollapsed?: boolean;
@@ -104,63 +107,6 @@ const SortableProjectWrapper = memo(function SortableProjectWrapper({
 		</div>
 	);
 });
-
-/**
- * Drop target for the ungrouped list at the sidebar root, so a project can be
- * dragged back out of a folder. While a drag is active it keeps a minimum
- * height, otherwise an empty root would be an untargetable zero-height strip.
- */
-function RootDropZone({
-	isDragging,
-	children,
-}: {
-	isDragging: boolean;
-	children: React.ReactNode;
-}) {
-	const { setNodeRef, isOver } = useDroppable({ id: FOLDER_DROP_ROOT });
-	return (
-		<div
-			ref={setNodeRef}
-			className={cn(
-				isDragging && "min-h-8 rounded-md transition-colors",
-				isDragging && isOver && "bg-fill-hover ring-1 ring-primary/50",
-			)}
-		>
-			{children}
-		</div>
-	);
-}
-
-/**
- * Indented wrapper for a folder's projects. The rail marks where the folder's
- * contents end (so no divider is needed before the ungrouped list), tinted
- * with the folder colour when one is set. In the collapsed icon rail there are
- * no headers to nest under, so children render flush.
- */
-function FolderContents({
-	folder,
-	isSidebarCollapsed,
-	children,
-}: {
-	folder: DashboardSidebarFolder;
-	isSidebarCollapsed: boolean;
-	children: React.ReactNode;
-}) {
-	if (isSidebarCollapsed) return <>{children}</>;
-	return (
-		<div
-			className="ml-4 border-l border-border/60 pl-1"
-			// 8-digit hex: folder colour at ~30% alpha keeps the rail quiet.
-			style={
-				hasCustomColor(folder.color)
-					? { borderColor: `${folder.color}4d` }
-					: undefined
-			}
-		>
-			{children}
-		</div>
-	);
-}
 
 export function DashboardSidebar({
 	isCollapsed = false,
@@ -248,34 +194,9 @@ export function DashboardSidebar({
 			.filter((g): g is DashboardSidebarProject => g != null);
 	}, [groups, projectOrder]);
 
-	// Split the projects into folders and the ungrouped root list. A project
-	// pointing at a deleted folder falls back to the root so it can never
-	// become unreachable.
-	const folderIds = useMemo(
-		() => new Set(folders.map((folder) => folder.id)),
-		[folders],
-	);
-
-	const foldersWithProjects = useMemo(() => {
-		const byFolder = new Map<string, DashboardSidebarProject[]>();
-		for (const project of orderedGroups) {
-			if (!project.folderId || !folderIds.has(project.folderId)) continue;
-			const list = byFolder.get(project.folderId);
-			if (list) list.push(project);
-			else byFolder.set(project.folderId, [project]);
-		}
-		return folders.map((folder) => ({
-			folder,
-			projects: byFolder.get(folder.id) ?? [],
-		}));
-	}, [orderedGroups, folders, folderIds]);
-
-	const ungroupedProjects = useMemo(
-		() =>
-			orderedGroups.filter(
-				(project) => !project.folderId || !folderIds.has(project.folderId),
-			),
-		[orderedGroups, folderIds],
+	const { foldersWithProjects, ungroupedProjects } = useMemo(
+		() => groupProjectsByFolder(folders, orderedGroups),
+		[folders, orderedGroups],
 	);
 
 	// dnd-kit requires the SortableContext item order to match the rendered
@@ -378,9 +299,12 @@ export function DashboardSidebar({
 									/>
 								)}
 
+								{/* Flex column so the RootDropZone can grow into the empty
+								    space below the folders during a drag; children keep
+								    their natural height so the list still scrolls. */}
 								<OverflowFadeContainer
 									fadeEdges={["top", "bottom"]}
-									className="flex-1 overflow-y-auto hide-scrollbar"
+									className="flex flex-1 flex-col overflow-y-auto hide-scrollbar [&>*]:shrink-0"
 								>
 									{(isCollapsed || !workspacesListCollapsed) && (
 										<DashboardSidebarPinnedSection
@@ -392,7 +316,7 @@ export function DashboardSidebar({
 									{(isCollapsed || !workspacesListCollapsed) && (
 										<DndContext
 											sensors={sensors}
-											collisionDetection={closestCenter}
+											collisionDetection={folderAwareCollisionDetection}
 											measuring={{
 												droppable: { strategy: MeasuringStrategy.Always },
 											}}
