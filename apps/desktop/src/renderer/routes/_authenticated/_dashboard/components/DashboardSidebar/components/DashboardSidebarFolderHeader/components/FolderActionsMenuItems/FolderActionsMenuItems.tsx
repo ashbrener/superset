@@ -14,7 +14,6 @@ import {
 } from "@superset/ui/dropdown-menu";
 import { toast } from "@superset/ui/sonner";
 import { cn } from "@superset/ui/utils";
-import { HiCheck } from "react-icons/hi2";
 import {
 	LuImage,
 	LuPalette,
@@ -24,15 +23,12 @@ import {
 	LuX,
 } from "react-icons/lu";
 import { electronTrpc } from "renderer/lib/electron-trpc";
-import {
-	PROJECT_COLOR_DEFAULT,
-	PROJECT_COLORS,
-} from "shared/constants/project-colors";
 import type { DashboardSidebarFolder } from "../../../../types";
 import {
 	FOLDER_ICON_EMOJI,
 	shrinkIconDataUrl,
 } from "../../../../utils/folderIcon";
+import { ColorMenuItems } from "../../../ColorMenuItems";
 
 export type FolderActionsMenuKind = "context" | "dropdown";
 
@@ -68,12 +64,6 @@ export function FolderActionsMenuItems({
 		kind === "context" ? ContextMenuSubContent : DropdownMenuSubContent;
 	const iconClassName = kind === "context" ? "size-4 mr-2" : "size-4";
 
-	const selectedValue = folder.color ?? PROJECT_COLOR_DEFAULT;
-	const colorOptions = [
-		{ name: "Default", value: PROJECT_COLOR_DEFAULT },
-		...PROJECT_COLORS,
-	];
-
 	const selectImageFile = electronTrpc.window.selectImageFile.useMutation();
 
 	// A picked file is re-encoded small before it goes in the store: folder
@@ -102,26 +92,11 @@ export function FolderActionsMenuItems({
 					Set folder color
 				</SubTrigger>
 				<SubContent className="max-h-80 w-40 overflow-y-auto">
-					{colorOptions.map((option) => {
-						const isDefault = option.value === PROJECT_COLOR_DEFAULT;
-						return (
-							<Item
-								key={option.value}
-								onSelect={() => onSetColor(isDefault ? null : option.value)}
-							>
-								<span
-									className="mr-2 size-3 shrink-0 rounded-full border border-border"
-									style={{
-										backgroundColor: isDefault ? "transparent" : option.value,
-									}}
-								/>
-								<span className="flex-1">{option.name}</span>
-								{selectedValue === option.value && (
-									<HiCheck className="size-4 text-primary" />
-								)}
-							</Item>
-						);
-					})}
+					<ColorMenuItems
+						kind={kind}
+						color={folder.color}
+						onSelect={onSetColor}
+					/>
 				</SubContent>
 			</Sub>
 			<Sub>
@@ -130,20 +105,21 @@ export function FolderActionsMenuItems({
 					Set folder icon
 				</SubTrigger>
 				<SubContent className="w-56">
+					{/* Menu items, not plain buttons, so the grid stays on the menu's
+					 * roving focus and arrow keys reach every emoji. */}
 					<div className="grid grid-cols-8 gap-0.5 p-1">
 						{FOLDER_ICON_EMOJI.map((emoji) => (
-							<button
+							<Item
 								key={emoji}
-								type="button"
 								aria-label={`Use ${emoji} as the folder icon`}
-								onClick={() => onSetIcon(emoji)}
+								onSelect={() => onSetIcon(emoji)}
 								className={cn(
-									"flex size-6 items-center justify-center rounded text-base hover:bg-fill-hover",
+									"size-6 justify-center p-0 text-base",
 									folder.icon === emoji && "bg-fill-selected",
 								)}
 							>
 								{emoji}
-							</button>
+							</Item>
 						))}
 					</div>
 					<Separator />

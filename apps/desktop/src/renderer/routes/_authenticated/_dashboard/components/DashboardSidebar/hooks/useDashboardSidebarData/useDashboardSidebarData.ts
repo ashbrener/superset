@@ -3,6 +3,7 @@ import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef } from "react";
 import { resolveProjectIconUrl } from "renderer/hooks/host-projects/resolveProjectIconUrl";
 import { useHostProjects } from "renderer/hooks/host-projects/useHostProjects";
+import { useKnownHosts } from "renderer/hooks/known-hosts/useKnownHosts";
 import { useRelayUrl } from "renderer/hooks/useRelayUrl";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
@@ -162,15 +163,7 @@ export function useDashboardSidebarData() {
 		(state) => state.byWorkspaceId,
 	);
 
-	const { data: hosts = [] } = useLiveQuery(
-		(q) =>
-			q.from({ hosts: collections.v2Hosts }).select(({ hosts }) => ({
-				organizationId: hosts.organizationId,
-				machineId: hosts.machineId,
-				isOnline: hosts.isOnline,
-			})),
-		[collections],
-	);
+	const { hosts, organizationId: knownHostsOrgId } = useKnownHosts();
 	const hostsByMachineId = useMemo(
 		() => new Map(hosts.map((host) => [host.machineId, host])),
 		[hosts],
@@ -208,6 +201,19 @@ export function useDashboardSidebarData() {
 				})),
 		[collections],
 	);
+	// Same JS re-sort as the project rows below, for the same reason: the
+	// query's incremental orderBy doesn't reliably re-sort after an insert or
+	// a tabOrder renumber, so a new folder could sit in the wrong place until
+	// reload. `folderId` breaks ties so equal tabOrders stay stable.
+	const orderedSidebarFolders = useMemo(
+		() =>
+			[...sidebarFolders].sort(
+				(left, right) =>
+					left.tabOrder - right.tabOrder || left.id.localeCompare(right.id),
+			),
+		[sidebarFolders],
+	);
+
 	// Sorted in JS, not via the query's orderBy: the incremental orderBy
 	// does not reliably re-sort on row inserts/renumbers (a newly added
 	// project stayed appended at the bottom until reload), and tabOrders
@@ -405,15 +411,27 @@ export function useDashboardSidebarData() {
 				machineId,
 				relayUrl,
 				workspaces: visibleSidebarWorkspaces,
+				fallbackOrganizationId: knownHostsOrgId,
 			}),
-		[activeHostUrl, hosts, machineId, relayUrl, visibleSidebarWorkspaces],
+		[
+			activeHostUrl,
+			hosts,
+			knownHostsOrgId,
+			machineId,
+			relayUrl,
+			visibleSidebarWorkspaces,
+		],
 	);
 
 	const pullRequestQueries = useQueries({
 		queries: pullRequestQueryTargets.map((target) => ({
 			queryKey: getDashboardSidebarPullRequestQueryKey(target),
 			refetchInterval: 10_000,
+			// Unreachable host: keep the query mounted so cached chips stay
+			// rendered through the outage; fetches resume when the URL returns.
+			enabled: target.hostUrl !== null,
 			queryFn: async () => {
+				if (!target.hostUrl) return { workspaces: [] };
 				const client = getHostServiceClientByUrl(target.hostUrl);
 				return client.pullRequests.getByWorkspaces.query({
 					workspaceIds: target.workspaceIds,
@@ -446,7 +464,7 @@ export function useDashboardSidebarData() {
 			const target = pullRequestQueryTargets.find(
 				(candidate) => candidate.machineId === workspace.hostId,
 			);
-			if (!target) return;
+			if (!target?.hostUrl) return;
 
 			const client = getHostServiceClientByUrl(target.hostUrl);
 			await client.pullRequests.refreshByWorkspaces.mutate({
@@ -503,7 +521,7 @@ export function useDashboardSidebarData() {
 
 	return {
 		groups,
-		folders: sidebarFolders,
+		folders: orderedSidebarFolders,
 		pinnedWorkspaces,
 		refreshWorkspacePullRequest,
 		toggleProjectCollapsed,

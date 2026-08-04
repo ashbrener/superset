@@ -93,43 +93,32 @@ export function DashboardSidebarFolderHeader({
 		/>
 	);
 
+	const chevron = (
+		<div className="mr-2 grid h-5 w-5 shrink-0 items-center justify-center [&>*]:col-start-1 [&>*]:row-start-1">
+			<HiChevronRight
+				className={cn(
+					"size-3 text-muted-foreground transition-transform duration-150",
+					!folder.isCollapsed && "rotate-90",
+				)}
+			/>
+		</div>
+	);
+
 	return (
 		<ContextMenu>
 			<ContextMenuTrigger asChild>
-				{/* biome-ignore lint/a11y/noStaticElementInteractions: header is a single toggle target while keeping nested inline controls. */}
 				<div
 					ref={setDropRef}
-					role={isRenaming ? undefined : "button"}
-					tabIndex={isRenaming ? undefined : 0}
-					onClick={isRenaming ? undefined : () => onToggleCollapse(folder.id)}
-					onKeyDown={
-						isRenaming
-							? undefined
-							: (event) => {
-									if (event.key === "Enter" || event.key === " ") {
-										event.preventDefault();
-										onToggleCollapse(folder.id);
-									}
-								}
-					}
 					className={cn(
-						"group mx-2 flex min-h-7 items-center rounded-md py-1 pl-2 pr-2 text-[13px] font-semibold",
+						"group relative mx-2 flex min-h-7 items-center rounded-md py-1 pl-2 pr-2 text-[13px] font-semibold",
 						"text-muted-foreground transition-colors hover:bg-fill-hover",
 						// Highlight while a dragged project hovers this folder.
 						isOver && "bg-fill-hover ring-1 ring-primary/50",
 					)}
 				>
-					<div className="mr-2 grid h-5 w-5 shrink-0 items-center justify-center [&>*]:col-start-1 [&>*]:row-start-1">
-						<HiChevronRight
-							className={cn(
-								"size-3 text-muted-foreground transition-transform duration-150",
-								!folder.isCollapsed && "rotate-90",
-							)}
-						/>
-					</div>
-
-					<div className="flex min-w-0 flex-1 items-center gap-1.5">
-						{isRenaming ? (
+					{isRenaming ? (
+						<div className="flex min-w-0 flex-1 items-center">
+							{chevron}
 							<RenameInput
 								value={renameValue}
 								onChange={setRenameValue}
@@ -137,8 +126,19 @@ export function DashboardSidebarFolderHeader({
 								onCancel={cancelRename}
 								className="-ml-1 h-5 w-full min-w-0 border-none bg-transparent px-1 py-0 text-[13px] font-semibold text-muted-foreground outline-none"
 							/>
-						) : (
-							<>
+						</div>
+					) : (
+						/* The toggle is a real button and the actions trigger is its
+						 * sibling, so the row is one tab stop with no nested control;
+						 * the stretched ::before keeps the whole row clickable. */
+						<button
+							type="button"
+							aria-expanded={!folder.isCollapsed}
+							onClick={() => onToggleCollapse(folder.id)}
+							className="flex min-w-0 flex-1 items-center text-left before:absolute before:inset-0 before:rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						>
+							{chevron}
+							<span className="flex min-w-0 flex-1 items-center gap-1.5">
 								{/* Icon when set (#1176), colour dot as the fallback identity. */}
 								{folder.icon ? (
 									isImageIcon(folder.icon) ? (
@@ -167,17 +167,15 @@ export function DashboardSidebarFolderHeader({
 										{projectCount}
 									</span>
 								)}
-							</>
-						)}
-					</div>
+							</span>
+						</button>
+					)}
 
 					{!isRenaming && (
-						// biome-ignore lint/a11y/noStaticElementInteractions: wrapper only isolates events from the header toggle.
-						<div
-							className="ml-1 hidden size-5 shrink-0 items-center justify-center group-hover:flex has-[[data-state=open]]:flex"
-							onClick={(event) => event.stopPropagation()}
-							onKeyDown={(event) => event.stopPropagation()}
-						>
+						// Paints above the toggle's stretched hit area. Revealed while the
+						// row holds focus too, otherwise display:none would put the
+						// trigger out of reach of the keyboard.
+						<div className="relative z-10 ml-1 hidden size-5 shrink-0 items-center justify-center group-hover:flex group-has-[:focus]:flex has-[[data-state=open]]:flex">
 							<DropdownMenu>
 								<DropdownMenuTrigger asChild>
 									<Button

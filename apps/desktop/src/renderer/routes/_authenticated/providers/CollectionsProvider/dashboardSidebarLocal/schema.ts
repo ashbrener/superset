@@ -391,6 +391,23 @@ export const DEFAULT_V2_USER_PREFERENCES: V2UserPreferencesRow = {
  * the stored row — they have no synthesizable default. Optional fields with
  * intrinsic defaults get filled at both the top level and inside sidebarState.
  */
+/**
+ * Rows written before folders existed have no `folderId` at all, and a
+ * localStorage read bypasses the schema default — leaving it `undefined`
+ * rather than `null`. The menu tests `folderId !== null` to decide whether to
+ * offer "Remove from folder", so a legacy root project offered it and did
+ * nothing. Normalise on read.
+ */
+export function healSidebarProject(raw: unknown): DashboardSidebarProjectRow {
+	const row = (
+		raw && typeof raw === "object" ? raw : {}
+	) as Partial<DashboardSidebarProjectRow>;
+	return {
+		...row,
+		folderId: row.folderId ?? null,
+	} as DashboardSidebarProjectRow;
+}
+
 export function healWorkspaceLocalState(raw: unknown): WorkspaceLocalStateRow {
 	const r = (
 		raw && typeof raw === "object" ? raw : {}
