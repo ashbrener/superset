@@ -1,3 +1,4 @@
+import { Label } from "@superset/ui/label";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo } from "react";
@@ -8,6 +9,8 @@ import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { useWorkspaceHostOptions } from "renderer/routes/_authenticated/components/DashboardNewWorkspaceModal/components/DashboardNewWorkspaceForm/components/DevicePicker/hooks/useWorkspaceHostOptions";
 import { ProjectThumbnail } from "renderer/routes/_authenticated/components/ProjectThumbnail";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
+import { HighlightText } from "renderer/routes/_authenticated/settings/components/HighlightText";
+import { useSettingsSearchQuery } from "renderer/stores/settings-state";
 import {
 	HostSelect,
 	type HostSelectOption,
@@ -19,6 +22,7 @@ import { IconUploadField } from "./components/IconUploadField";
 import { NameSection } from "./components/NameSection";
 import { ProjectLocationSection } from "./components/ProjectLocationSection";
 import { RepositorySection } from "./components/RepositorySection";
+import { SparseCheckoutSection } from "./components/SparseCheckoutSection";
 import { V2ScriptsEditor } from "./components/V2ScriptsEditor";
 import { WorktreeLocationSection } from "./components/WorktreeLocationSection";
 
@@ -32,6 +36,7 @@ export function V2ProjectSettings({
 	hostId,
 }: V2ProjectSettingsProps) {
 	const navigate = useNavigate();
+	const searchQuery = useSettingsSearchQuery();
 	const { machineId } = useLocalHostService();
 	const { currentDeviceName, localHostId, otherHosts } =
 		useWorkspaceHostOptions();
@@ -222,10 +227,42 @@ export function V2ProjectSettings({
 							onChanged={() => refetchHostProject()}
 						/>
 					</SettingsRow>
+					{targetHostUrl && hostProject && (
+						<div className="pt-4">
+							<div className="mb-3">
+								<Label
+									htmlFor="project-sparse-checkout"
+									className="text-sm font-medium"
+								>
+									Sparse checkout
+								</Label>
+								<p className="mt-0.5 text-xs text-muted-foreground">
+									Folders to check out into new worktrees, one per line,
+									relative to the repo root. Files at the root are always
+									included. Empty checks out everything.
+								</p>
+							</div>
+							<SparseCheckoutSection
+								// Remount per project AND per target host: the editor
+								// holds draft text and pending-save state, and switching
+								// either while the field is focused must not carry the
+								// draft or an in-flight save across the boundary — a
+								// project can be viewed across multiple hosts.
+								key={`${projectId}:${targetHostId}`}
+								projectId={projectId}
+								hostUrl={targetHostUrl}
+								// Hosts older than this setting omit the field entirely.
+								paths={hostProject.sparseCheckoutPaths ?? []}
+								onChanged={() => refetchHostProject()}
+							/>
+						</div>
+					)}
 					{targetHostUrl && (
 						<div className="pt-4">
 							<div className="mb-3">
-								<h3 className="text-sm font-medium">Scripts</h3>
+								<h3 className="text-sm font-medium">
+									<HighlightText text="Scripts" query={searchQuery} />
+								</h3>
 								<p className="mt-0.5 text-xs text-muted-foreground">
 									Runs in a terminal for setup, teardown, and the workspace Run
 									button.
