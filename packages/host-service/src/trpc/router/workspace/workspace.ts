@@ -9,6 +9,7 @@ import {
 	updateLocalWorkspace,
 } from "../../../workspaces/local-workspace-store";
 import { protectedProcedure, router } from "../../index";
+import { resolveWorktreePath } from "../git/utils/resolve-worktree";
 import { destroyWorkspace } from "../workspace-cleanup";
 
 export const workspaceRouter = router({
@@ -130,18 +131,8 @@ export const workspaceRouter = router({
 	gitStatus: protectedProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const localWorkspace = ctx.db.query.workspaces
-				.findFirst({ where: eq(workspaces.id, input.id) })
-				.sync();
-
-			if (!localWorkspace) {
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Workspace not found",
-				});
-			}
-
-			const git = await ctx.git(localWorkspace.worktreePath);
+			const worktreePath = resolveWorktreePath(ctx, input.id);
+			const git = await ctx.git(worktreePath);
 			const status = await git.status();
 
 			return {
@@ -160,11 +151,15 @@ export const workspaceRouter = router({
 		.input(z.object({ id: z.string() }))
 		.mutation(async ({ ctx, input }) => {
 			// Legacy external surface used by CLI/SDK/MCP. Preserve its
-			// non-interactive contract while reusing the v2 cleanup path.
+			// non-interactive contract while reusing the v2 cleanup path:
+			// force covers the git semantics (no dirty-worktree prompt), but
+			// teardown still runs — a failure lands in `warnings` since there
+			// is nobody to prompt for a force-retry (#6174).
 			return destroyWorkspace(ctx, {
 				workspaceId: input.id,
 				deleteBranch: false,
 				force: true,
+				teardownMode: "best-effort",
 			});
 		}),
 });
