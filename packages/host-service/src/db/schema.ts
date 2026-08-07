@@ -80,10 +80,16 @@ export const projects = sqliteTable(
 		// Custom project icon as a small downscaled data-URI. Null falls back to
 		// the GitHub owner avatar (when a repo is linked) or a placeholder.
 		icon: text("icon"),
+		// Accent color as a `#rrggbb` hex. Null means the default (no accent).
+		color: text("color"),
 		// JSON array of repo-relative folders to cone-mode sparse-checkout into
 		// new worktrees. Null (the default) means a full checkout. Read through
 		// `parseSparseCheckoutPaths` — the encoding is not part of the API.
 		sparseCheckoutPaths: text("sparse_checkout_paths"),
+		// Free-text instructions injected into AI workspace/branch naming for
+		// this project (e.g. "include the Linear ticket id in the branch name").
+		// Null means the default naming behavior.
+		namingInstructions: text("naming_instructions"),
 		// Empty string means "not yet backfilled" — the startup sweep targets
 		// these rows (name from cloud legacy row if reachable, else basename).
 		name: text().notNull().default(""),

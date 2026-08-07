@@ -44,6 +44,10 @@ import {
 // the stored/broadcast value (it rides in project.list and project:changed).
 const MAX_PROJECT_ICON_LENGTH = 256 * 1024;
 
+// Naming instructions ride inside the naming model's system prompt; a couple
+// of sentences is the intended size, so cap well below prompt-bloat territory.
+const MAX_NAMING_INSTRUCTIONS_LENGTH = 2000;
+
 export const projectRouter = router({
 	list: protectedProcedure.query(({ ctx }) => {
 		return ctx.db
@@ -61,6 +65,7 @@ export const projectRouter = router({
 				repoUrl: row.repoUrl,
 				worktreeBaseDir: row.worktreeBaseDir,
 				icon: row.icon,
+				color: row.color,
 				createdAt: row.createdAt,
 				updatedAt: row.updatedAt || row.createdAt,
 			}));
@@ -110,24 +115,31 @@ export const projectRouter = router({
 				branchPrefixMode: row.branchPrefixMode,
 				branchPrefixCustom: row.branchPrefixCustom,
 				icon: row.icon,
+				color: row.color,
 				// Always an array; the column's JSON encoding stays internal.
 				sparseCheckoutPaths: parseSparseCheckoutPaths(row.sparseCheckoutPaths),
+				namingInstructions: row.namingInstructions,
 			};
 		}),
 
 	/**
 	 * Set (or clear) this project's custom icon. Local-first: the icon is a
-	 * small downscaled data-URI stored on the host row. A null clears it so the
-	 * project falls back to the GitHub owner avatar / placeholder.
+	 * small downscaled data-URI stored on the host row. The "none" sentinel
+	 * means "explicitly no icon" (renderers show the letter placeholder); a
+	 * null clears back to the default (GitHub owner avatar / placeholder).
 	 */
 	setIcon: protectedProcedure
 		.input(
 			z.object({
 				projectId: z.string().uuid(),
 				icon: z
-					.string()
-					.max(MAX_PROJECT_ICON_LENGTH, "Icon image is too large")
-					.regex(/^data:image\//, "Icon must be an image data URI")
+					.union([
+						z
+							.string()
+							.max(MAX_PROJECT_ICON_LENGTH, "Icon image is too large")
+							.regex(/^data:image\//, "Icon must be an image data URI"),
+						z.literal("none"),
+					])
 					.nullable(),
 			}),
 		)
@@ -136,6 +148,35 @@ export const projectRouter = router({
 				{ db: ctx.db, eventBus: ctx.eventBus },
 				input.projectId,
 				{ icon: input.icon },
+			);
+			if (!row) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Project is not set up on this host",
+				});
+			}
+			return toProjectSnapshot(row);
+		}),
+
+	/**
+	 * Set (or clear) this project's accent color. Stored as a `#rrggbb` hex on
+	 * the host row; a null clears it back to the default (no accent).
+	 */
+	setColor: protectedProcedure
+		.input(
+			z.object({
+				projectId: z.string().uuid(),
+				color: z
+					.string()
+					.regex(/^#[0-9a-fA-F]{6}$/, "Color must be a #rrggbb hex")
+					.nullable(),
+			}),
+		)
+		.mutation(({ ctx, input }) => {
+			const row = updateLocalProject(
+				{ db: ctx.db, eventBus: ctx.eventBus },
+				input.projectId,
+				{ color: input.color },
 			);
 			if (!row) {
 				throw new TRPCError({
@@ -175,6 +216,41 @@ export const projectRouter = router({
 				id: project.id,
 				worktreeBaseDir: project.worktreeBaseDir ?? null,
 			};
+		}),
+
+	/**
+	 * Set (or clear) this project's AI naming instructions — free text
+	 * injected into workspace/branch name generation. Null or blank clears
+	 * the setting so naming falls back to the default behavior.
+	 */
+	setNamingInstructions: protectedProcedure
+		.input(
+			z.object({
+				projectId: z.string().uuid(),
+				instructions: z
+					.string()
+					.max(
+						MAX_NAMING_INSTRUCTIONS_LENGTH,
+						"Naming instructions are too long",
+					)
+					.nullable(),
+			}),
+		)
+		.mutation(({ ctx, input }) => {
+			const namingInstructions = input.instructions?.trim() || null;
+			const updated = ctx.db
+				.update(projects)
+				.set({ namingInstructions })
+				.where(eq(projects.id, input.projectId))
+				.returning({ id: projects.id })
+				.get();
+			if (!updated) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Project is not set up on this host",
+				});
+			}
+			return { namingInstructions };
 		}),
 
 	/**
