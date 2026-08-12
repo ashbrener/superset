@@ -3,7 +3,6 @@ import { Button } from "@superset/ui/button";
 import { Spinner } from "@superset/ui/spinner";
 import {
 	createFileRoute,
-	Navigate,
 	Outlet,
 	useLocation,
 	useNavigate,
@@ -13,6 +12,7 @@ import { DndProvider } from "react-dnd";
 import { HiOutlineWifi } from "react-icons/hi2";
 import { NewWorkspaceModal } from "renderer/components/NewWorkspaceModal";
 import { Paywall } from "renderer/components/Paywall";
+import { Redirect } from "renderer/components/Redirect";
 import { env } from "renderer/env.renderer";
 import { useDelayElapsed } from "renderer/hooks/useDelayElapsed";
 import { useIsV2CloudEnabled } from "renderer/hooks/useIsV2CloudEnabled";
@@ -51,7 +51,6 @@ import { TeardownLogsDialog } from "./components/TeardownLogsDialog";
 import { V2NotificationController } from "./components/V2NotificationController";
 import { createPierreWorker } from "./lib/pierreWorker";
 import { CollectionsProvider } from "./providers/CollectionsProvider";
-import { DeletingWorkspacesProvider } from "./providers/DeletingWorkspacesProvider";
 import { HostWorkspacesProvider } from "./providers/HostWorkspacesProvider";
 import { LocalHostServiceProvider } from "./providers/LocalHostServiceProvider";
 
@@ -59,12 +58,11 @@ export const Route = createFileRoute("/_authenticated")({
 	component: AuthenticatedLayout,
 });
 
-// Hoisted for stable props identity — <Navigate> re-navigates every re-render otherwise (react error #185 loop, #5729)
-const signInRedirect = <Navigate to="/sign-in" replace />;
+const signInRedirect = <Redirect to="/sign-in" replace />;
 const createOrganizationRedirect = (
-	<Navigate to="/create-organization" replace />
+	<Redirect to="/create-organization" replace />
 );
-const onboardingRedirect = <Navigate to="/onboarding" replace />;
+const onboardingRedirect = <Redirect to="/onboarding" replace />;
 
 const SESSION_PENDING_TIMEOUT_MS = 15_000;
 
@@ -282,39 +280,37 @@ function AuthenticatedLayout() {
 				<GlobalBrowserLifecycle />
 				<LocalHostServiceProvider>
 					<HostWorkspacesProvider>
-						<DeletingWorkspacesProvider>
-							<WorkerPoolContextProvider
-								poolOptions={{ workerFactory: createPierreWorker, poolSize: 8 }}
-								highlighterOptions={{ preferredHighlighter: "shiki-wasm" }}
-							>
-								<DiffThemeSync />
-								<AgentHooks />
-								<FileMenuListener />
-								<V2NotificationController />
-								<DockBadgeController />
-								<DaemonAutoUpdateFailureDialog />
-								<Outlet />
-								<V1ImportModal />
-								{isV2CloudEnabled ? (
-									<>
-										<V1MigrationContinuity />
-										<V2FlipWelcome />
-									</>
-								) : (
-									<V1FlipNotice />
-								)}
-								<V1AutoMigration />
-								<WorkspaceInitEffects />
-								{isV2CloudEnabled ? (
-									<DashboardNewWorkspaceModal />
-								) : (
-									<NewWorkspaceModal />
-								)}
-								<InitGitDialog />
-								<TeardownLogsDialog />
-								<Paywall />
-							</WorkerPoolContextProvider>
-						</DeletingWorkspacesProvider>
+						<WorkerPoolContextProvider
+							poolOptions={{ workerFactory: createPierreWorker, poolSize: 8 }}
+							highlighterOptions={{ preferredHighlighter: "shiki-wasm" }}
+						>
+							<DiffThemeSync />
+							<AgentHooks />
+							<FileMenuListener />
+							<V2NotificationController />
+							<DockBadgeController />
+							<DaemonAutoUpdateFailureDialog />
+							<Outlet />
+							<V1ImportModal />
+							{isV2CloudEnabled ? (
+								<>
+									<V1MigrationContinuity />
+									<V2FlipWelcome />
+								</>
+							) : (
+								<V1FlipNotice />
+							)}
+							<V1AutoMigration />
+							<WorkspaceInitEffects />
+							{isV2CloudEnabled ? (
+								<DashboardNewWorkspaceModal />
+							) : (
+								<NewWorkspaceModal />
+							)}
+							<InitGitDialog />
+							<TeardownLogsDialog />
+							<Paywall />
+						</WorkerPoolContextProvider>
 					</HostWorkspacesProvider>
 				</LocalHostServiceProvider>
 			</CollectionsProvider>
