@@ -246,8 +246,9 @@ function getCollectionsCacheKey(organizationId: string): string {
 // Per-org tRPC client. Each organization's collection callbacks use a client
 // whose `x-superset-organization-id` header is fixed to THAT org (closure-
 // scoped), so a deferred or batched write from one org's collection can never
-// be mis-scoped to whatever org a window later switched to. The auth token is
-// still read dynamically; only the organization is pinned per client.
+// be mis-scoped to whatever org a window later switched to. The auth token and
+// the client-version header are still read dynamically; only the organization
+// is pinned per client.
 function createOrgApiClient(organizationId: string) {
 	return createTRPCProxyClient<AppRouter>({
 		links: [
@@ -257,6 +258,9 @@ function createOrgApiClient(organizationId: string) {
 					const token = getAuthToken();
 					return {
 						...(token ? { Authorization: `Bearer ${token}` } : {}),
+						...(window.App?.appVersion
+							? { "x-superset-client": `desktop/${window.App.appVersion}` }
+							: {}),
 						[ORGANIZATION_HEADER]: organizationId,
 					};
 				},

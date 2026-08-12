@@ -21,7 +21,7 @@ export default command({
 		timezone: string().desc(`IANA timezone (default: host TZ, else UTC)`),
 		dtstart: string().desc("ISO 8601 start anchor (default: now)"),
 		project: string().desc(
-			"v2 project id — required for new-workspace-per-run mode",
+			"v2 project id for new-workspace-per-run mode. Omit (with no --workspace) to create a project-less session per run",
 		),
 		workspace: string().desc("existing v2 workspace id — reuses it every run"),
 		host: string().desc(
@@ -43,10 +43,6 @@ export default command({
 			throw new Error("Provide --prompt <text> or --prompt-file <path>");
 		}
 
-		if (!options.project && !options.workspace) {
-			throw new Error("Provide --project or --workspace");
-		}
-
 		const organizationId = ctx.config.organizationId;
 		if (!organizationId) {
 			throw new CLIError("No active organization", "Run: superset auth login");
@@ -54,6 +50,7 @@ export default command({
 		const target = await resolveAutomationTarget({
 			organizationId,
 			userJwt: ctx.bearer,
+			api: ctx.api,
 			hostId: options.host ?? undefined,
 			workspaceId: options.workspace ?? undefined,
 			projectId: options.project ?? undefined,
