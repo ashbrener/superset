@@ -1,23 +1,24 @@
 import {
+	CatchBoundary,
 	createFileRoute,
-	Navigate,
 	Outlet,
+	useLocation,
 	useMatchRoute,
 	useNavigate,
 } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { CommandPaletteHost } from "renderer/commandPalette";
+import { Redirect } from "renderer/components/Redirect";
 import { useIsV2CloudEnabled } from "renderer/hooks/useIsV2CloudEnabled";
 import { useHotkey } from "renderer/hotkeys";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { DashboardSidebar } from "renderer/routes/_authenticated/_dashboard/components/DashboardSidebar";
-import { DashboardSidebarDeleteDialog } from "renderer/routes/_authenticated/_dashboard/components/DashboardSidebar/components/DashboardSidebarDeleteDialog";
-import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
 import { useDevSeedV2Sidebar } from "renderer/routes/_authenticated/hooks/useDevSeedV2Sidebar";
 import { useHostWorkspaces } from "renderer/routes/_authenticated/providers/HostWorkspacesProvider";
 import { ResizablePanel } from "renderer/screens/main/components/ResizablePanel";
 import { WorkspaceSidebar } from "renderer/screens/main/components/WorkspaceSidebar";
 import { DeleteWorkspaceDialog } from "renderer/screens/main/components/WorkspaceSidebar/WorkspaceListItem/components";
+import { useDeleteWorkspaceIntent } from "renderer/stores/delete-workspace-intent";
 import { useOpenNewWorkspaceModal } from "renderer/stores/new-workspace-modal";
 import {
 	COLLAPSED_WORKSPACE_SIDEBAR_WIDTH,
@@ -27,32 +28,27 @@ import {
 } from "renderer/stores/workspace-sidebar-state";
 import { AddRepositoryModals } from "./components/AddRepositoryModals";
 import { CrossVersionMismatchState } from "./components/CrossVersionMismatchState";
+import { DashboardContentError } from "./components/DashboardContentError";
 import { TopBar } from "./components/TopBar";
 
 export const Route = createFileRoute("/_authenticated/_dashboard")({
 	component: DashboardLayout,
 });
 
-type DeleteTarget =
-	| {
-			version: "v1";
-			workspaceId: string;
-			workspaceName: string;
-			workspaceType: "worktree" | "branch";
-	  }
-	| {
-			version: "v2";
-			workspaceId: string;
-			workspaceName: string;
-			open: boolean;
-	  };
+/** v1 only — v2 deletes go through the globally-mounted DeleteWorkspaceMount
+ * (see delete-workspace-intent store). */
+type DeleteTarget = {
+	workspaceId: string;
+	workspaceName: string;
+	workspaceType: "worktree" | "branch";
+};
 
 function DashboardLayout() {
 	const navigate = useNavigate();
+	const location = useLocation();
 	const openNewWorkspaceModal = useOpenNewWorkspaceModal();
 	const isV2CloudEnabled = useIsV2CloudEnabled();
 	const { workspaces: hostWorkspaces } = useHostWorkspaces();
-	const { removeWorkspaceFromSidebar } = useDashboardSidebarState();
 	useDevSeedV2Sidebar();
 	// Get current workspace from route to pre-select project in new workspace modal
 	const matchRoute = useMatchRoute();
@@ -132,7 +128,6 @@ function DashboardLayout() {
 					workspaceId: currentWorkspaceId,
 					workspaceName: currentWorkspace.name,
 					workspaceType: currentWorkspace.type,
-					version: "v1",
 				});
 				return;
 			}
@@ -142,11 +137,9 @@ function DashboardLayout() {
 				currentV2Workspace &&
 				currentV2Workspace.type !== "main"
 			) {
-				setDeleteTarget({
+				useDeleteWorkspaceIntent.getState().request({
 					workspaceId: currentV2WorkspaceId,
 					workspaceName: currentV2Workspace.name || currentV2Workspace.branch,
-					version: "v2",
-					open: true,
 				});
 			}
 		},
@@ -236,19 +229,30 @@ function DashboardLayout() {
 							// dead-end "pick a workspace" screen. v1 users keep the
 							// static state — /new-workspace is a v2-only surface.
 							isV2CloudEnabled ? (
-								<Navigate to="/new-workspace" replace />
+								<Redirect to="/new-workspace" replace />
 							) : (
 								<CrossVersionMismatchState />
 							)
 						) : (
-							<Outlet />
+							// Contain content-route crashes to this pane: without a
+							// boundary they bubble to the root and unmount the whole
+							// app, which reads as Superset restarting itself
+							// (SUPER-1814). Resets on navigation.
+							<CatchBoundary
+								// Full href, not just pathname: a same-path search/hash
+								// change (filter, tab) must also clear a stuck error pane.
+								getResetKey={() => location.href}
+								errorComponent={DashboardContentError}
+							>
+								<Outlet />
+							</CatchBoundary>
 						)}
 					</div>
 				</div>
 			</div>
 			<div id="workspace-right-sidebar-slot" className="flex h-full shrink-0" />
 			<AddRepositoryModals />
-			{deleteTarget?.version === "v1" && (
+			{deleteTarget && (
 				<DeleteWorkspaceDialog
 					workspaceId={deleteTarget.workspaceId}
 					workspaceName={deleteTarget.workspaceName}
@@ -256,22 +260,6 @@ function DashboardLayout() {
 					open={true}
 					onOpenChange={(open) => {
 						if (!open) setDeleteTarget(null);
-					}}
-				/>
-			)}
-			{deleteTarget?.version === "v2" && (
-				<DashboardSidebarDeleteDialog
-					workspaceId={deleteTarget.workspaceId}
-					workspaceName={deleteTarget.workspaceName}
-					open={deleteTarget.open}
-					onOpenChange={(open) => {
-						setDeleteTarget((target) =>
-							target?.version === "v2" ? { ...target, open } : target,
-						);
-					}}
-					onDeleted={() => {
-						removeWorkspaceFromSidebar(deleteTarget.workspaceId);
-						setDeleteTarget(null);
 					}}
 				/>
 			)}
