@@ -146,7 +146,7 @@ export function useMoveProjectToOrganization() {
 			>();
 			for (const workspace of workspaces) {
 				try {
-					const { sessions } = await client.terminal.listSessions.query({
+					const { sessions } = await client.terminal.list.query({
 						workspaceId: workspace.id,
 					});
 					const live = sessions
@@ -336,6 +336,9 @@ export function useMoveProjectToOrganization() {
 							entry.terminalIds.map(() => ({
 								terminalId: crypto.randomUUID(),
 								cwd: null,
+								// A re-opened shell is a fresh terminal in the destination
+								// org — it inherits no v1 pane to resume from.
+								v1PaneId: null,
 							})),
 						]),
 					);
