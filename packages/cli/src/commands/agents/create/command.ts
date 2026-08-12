@@ -15,7 +15,12 @@ export default command({
 			.desc(
 				"Agent preset id (e.g. `claude`), HostAgentConfig instance UUID, or `superset` for a Superset session",
 			),
-		prompt: string().required().desc("Prompt sent to the agent"),
+		prompt: string().desc(
+			"Prompt sent to the agent (required unless --resume-session is set)",
+		),
+		resumeSession: string().desc(
+			"Session id of a previous run of this agent to restore instead of starting fresh",
+		),
 		effort: string().desc(
 			"Reasoning effort for this launch (agent-specific; omit to use the agent default)",
 		),
@@ -34,9 +39,16 @@ export default command({
 			throw new CLIError("No active organization", "Run: superset auth login");
 		}
 
+		if (!options.prompt && !options.resumeSession) {
+			throw new CLIError(
+				"Missing --prompt",
+				"Pass --prompt, or --resume-session to restore a previous session",
+			);
+		}
+
 		const hostId = options.host ?? getHostId();
 		const { workspace } = await findWorkspaceOnHost(
-			{ organizationId, userJwt: ctx.bearer, hostId },
+			{ organizationId, userJwt: ctx.bearer, api: ctx.api, hostId },
 			options.workspace,
 		);
 		if (!workspace) {
@@ -46,10 +58,11 @@ export default command({
 			);
 		}
 
-		const target = resolveHostTarget({
+		const target = await resolveHostTarget({
 			requestedHostId: hostId,
 			organizationId,
 			userJwt: ctx.bearer,
+			api: ctx.api,
 		});
 
 		const uploadedIds = options.attachment
@@ -60,7 +73,8 @@ export default command({
 		const result = await target.client.agents.run.mutate({
 			workspaceId: options.workspace,
 			agent: options.agent,
-			prompt: options.prompt,
+			prompt: options.prompt ?? "",
+			resumeSessionId: options.resumeSession,
 			effort: options.effort,
 			attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
 		});
