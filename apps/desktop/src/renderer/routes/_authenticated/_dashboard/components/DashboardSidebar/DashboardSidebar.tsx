@@ -11,13 +11,14 @@ import { useMatchRoute, useNavigate } from "@tanstack/react-router";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { HiOutlineCog6Tooth } from "react-icons/hi2";
 import { HiringBanner } from "renderer/components/HiringBanner";
+import { StarNagCard } from "renderer/components/StarNagCard";
 import { UpdatesPill } from "renderer/components/UpdatesPill";
 import { useHotkeyDisplay } from "renderer/hotkeys";
 import { OrganizationDropdown } from "renderer/routes/_authenticated/_dashboard/components/TopBar/components/OrganizationDropdown";
 import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { useInlineWorkspacePortsEnabled } from "renderer/stores/inline-workspace-ports";
-import { useSidebarWorkspacesCollapseStore } from "renderer/stores/sidebar-workspaces-collapse";
+import { useSidebarSectionsCollapseStore } from "renderer/stores/sidebar-sections-collapse";
 import { DashboardSidebarBulkActions } from "./components/DashboardSidebarBulkActions";
 import { DashboardSidebarHeader } from "./components/DashboardSidebarHeader";
 import { DashboardSidebarHoverCardOverlay } from "./components/DashboardSidebarHoverCardOverlay";
@@ -27,6 +28,7 @@ import { DashboardSidebarProjectSection } from "./components/DashboardSidebarPro
 import { DashboardSidebarSectionRenameProvider } from "./components/DashboardSidebarSectionRenameContext";
 import { DashboardSidebarSessionsSection } from "./components/DashboardSidebarSessionsSection";
 import { DashboardSidebarWorkspacesHeader } from "./components/DashboardSidebarWorkspacesHeader";
+import { SectionDragSpacer } from "./components/SectionDragSpacer";
 import { V2SetupScriptCard } from "./components/V2SetupScriptCard";
 import { useDashboardSidebarData } from "./hooks/useDashboardSidebarData";
 import { useDashboardSidebarShortcuts } from "./hooks/useDashboardSidebarShortcuts";
@@ -39,7 +41,10 @@ import {
 	DashboardSidebarWorkspaceStatusProvider,
 	type SidebarStatusWorkspaceRef,
 } from "./providers/DashboardSidebarWorkspaceStatusProvider";
-import type { DashboardSidebarProject } from "./types";
+import type {
+	DashboardSidebarProject,
+	DashboardSidebarWorkspace,
+} from "./types";
 import { getProjectChildrenWorkspaces } from "./utils/projectChildren";
 
 interface DashboardSidebarProps {
@@ -133,8 +138,8 @@ export function DashboardSidebar({
 	const inlineWorkspacePortsEnabled = useInlineWorkspacePortsEnabled();
 	const v2RouteMatch = matchRoute({ to: "/v2-workspace/$workspaceId" });
 	const activeV2WorkspaceId = v2RouteMatch ? v2RouteMatch.workspaceId : null;
-	const workspacesListCollapsed = useSidebarWorkspacesCollapseStore(
-		(s) => s.isCollapsed,
+	const workspacesListCollapsed = useSidebarSectionsCollapseStore(
+		(s) => s.collapsed.workspaces,
 	);
 
 	// Local project order — syncs from groups, updated on drag end
@@ -156,21 +161,33 @@ export function DashboardSidebar({
 		orderedGroups,
 		sessionWorkspaces,
 	);
-	const selectableWorkspaceIds = useMemo(
-		() =>
-			new Set(
-				orderedGroups.flatMap((project) =>
-					getProjectChildrenWorkspaces(project.children)
-						.filter(
-							(workspace) =>
-								workspace.type === "worktree" &&
-								workspace.pendingTransaction?.type !== "insert",
-						)
-						.map((workspace) => workspace.id),
-				),
-			),
-		[orderedGroups],
-	);
+	const selectableWorkspaceIds = useMemo(() => {
+		const ids = new Set<string>();
+		const addWorkspace = (workspace: DashboardSidebarWorkspace) => {
+			if (
+				workspace.type === "worktree" &&
+				workspace.pendingTransaction?.type !== "insert"
+			) {
+				ids.add(workspace.id);
+			}
+		};
+		for (const project of orderedGroups) {
+			for (const child of project.children) {
+				if (child.type === "workspace") {
+					addWorkspace(child.workspace);
+					continue;
+				}
+				// Members of collapsed groups are hidden and unclickable; keeping
+				// them selected would leave invisible rows armed for bulk actions
+				// (including Delete), so collapsing prunes them from the selection.
+				if (child.section.isCollapsed) continue;
+				for (const workspace of child.section.workspaces) {
+					addWorkspace(workspace);
+				}
+			}
+		}
+		return ids;
+	}, [orderedGroups]);
 
 	// Every workspace the sidebar can render (pinned, sessions, project rows) —
 	// the status provider fans out bindings queries and event subscriptions for
@@ -290,6 +307,7 @@ export function DashboardSidebar({
 													))}
 												</SortableContext>
 											)}
+											<SectionDragSpacer />
 										</OverflowFadeContainer>
 										{!isCollapsed && !inlineWorkspacePortsEnabled && (
 											<DashboardSidebarPortsList />
@@ -302,6 +320,7 @@ export function DashboardSidebar({
 											/>
 										)}
 										<HiringBanner surface="v2" isCollapsed={isCollapsed} />
+										<StarNagCard isCollapsed={isCollapsed} />
 										<div
 											className={cn(
 												isCollapsed

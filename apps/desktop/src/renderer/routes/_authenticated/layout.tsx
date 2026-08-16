@@ -17,6 +17,7 @@ import { env } from "renderer/env.renderer";
 import { useDelayElapsed } from "renderer/hooks/useDelayElapsed";
 import { useIsV2CloudEnabled } from "renderer/hooks/useIsV2CloudEnabled";
 import { useOnlineStatus } from "renderer/hooks/useOnlineStatus";
+import { useSettingsExternalChangeListener } from "renderer/hooks/useSettingsExternalChangeListener";
 import { useSignOut } from "renderer/hooks/useSignOut";
 import { authClient, getAuthToken } from "renderer/lib/auth-client";
 import { dragDropManager } from "renderer/lib/dnd";
@@ -27,6 +28,8 @@ import { InitGitDialog } from "renderer/react-query/projects/InitGitDialog";
 import { DaemonAutoUpdateFailureDialog } from "renderer/routes/_authenticated/components/DaemonAutoUpdateFailureDialog";
 import { DashboardNewWorkspaceModal } from "renderer/routes/_authenticated/components/DashboardNewWorkspaceModal";
 import { DiffThemeSync } from "renderer/routes/_authenticated/components/DiffThemeSync";
+import { PendingDeletionScreen } from "renderer/routes/_authenticated/components/PendingDeletionScreen";
+import { StarNagObserver } from "renderer/routes/_authenticated/components/StarNagObserver";
 import {
 	V1AutoMigration,
 	V1MigrationContinuity,
@@ -99,6 +102,7 @@ function AuthenticatedLayout() {
 	const [isSigningOut, setIsSigningOut] = useState(false);
 
 	useAgentHookListener();
+	useSettingsExternalChangeListener();
 
 	// Seed the parked-terminal eviction cap from settings (SUPER-1545).
 	const { data: parkedRuntimeCap } =
@@ -121,16 +125,10 @@ function AuthenticatedLayout() {
 				void navigate({
 					to: "/v2-workspace/$workspaceId",
 					params: { workspaceId: event.data.workspaceId },
-					search:
-						source.type === "terminal"
-							? {
-									terminalId: source.id,
-									focusRequestId: crypto.randomUUID(),
-								}
-							: {
-									chatSessionId: source.id,
-									focusRequestId: crypto.randomUUID(),
-								},
+					search: {
+						terminalId: source.id,
+						focusRequestId: crypto.randomUUID(),
+					},
 				});
 				return;
 			}
@@ -263,6 +261,15 @@ function AuthenticatedLayout() {
 		return signInRedirect;
 	}
 
+	if (session?.user?.deletionRequestedAt) {
+		return (
+			<PendingDeletionScreen
+				deletionRequestedAt={session.user.deletionRequestedAt}
+				onReactivated={() => void refetch()}
+			/>
+		);
+	}
+
 	if (!activeOrganizationId) {
 		return createOrganizationRedirect;
 	}
@@ -291,6 +298,7 @@ function AuthenticatedLayout() {
 							<FileMenuListener />
 							<V2NotificationController />
 							<DockBadgeController />
+							<StarNagObserver />
 							<DaemonAutoUpdateFailureDialog />
 							<Outlet />
 							<V1ImportModal />

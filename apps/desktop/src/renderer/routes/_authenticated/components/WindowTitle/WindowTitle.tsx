@@ -1,6 +1,6 @@
-import { useLiveQuery } from "@tanstack/react-db";
 import { useEffect } from "react";
-import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
+import { useActiveOrganizationId } from "renderer/hooks/useActiveOrganizationId";
+import { cloudTrpc } from "renderer/lib/cloud-trpc";
 import { productName } from "~/package.json";
 
 /**
@@ -11,13 +11,13 @@ import { productName } from "~/package.json";
  * org (per-window org context), so the titles differ per window.
  */
 export function WindowTitle() {
-	const collections = useCollections();
-	const { data: organizations } = useLiveQuery(
-		(q) => q.from({ organizations: collections.organizations }),
-		[collections],
-	);
+	const activeOrganizationId = useActiveOrganizationId();
+	// The list is every org you belong to, so it is shared and cached across
+	// windows; only the id picked out of it is per-window.
+	const { data: organizations } =
+		cloudTrpc.organization.list.useQuery(undefined);
 	const activeOrganization = organizations?.find(
-		(o) => o.id === collections.activeOrganizationId,
+		(organization) => organization.id === activeOrganizationId,
 	);
 
 	useEffect(() => {

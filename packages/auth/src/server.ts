@@ -21,6 +21,11 @@ import { getTrustedVercelPreviewOrigins } from "@superset/shared/vercel-preview-
 import { Client } from "@upstash/qstash";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import {
+	APIError,
+	createAuthMiddleware,
+	getSessionFromCtx,
+} from "better-auth/api";
 import { bearer, customSession, organization } from "better-auth/plugins";
 import { jwt } from "better-auth/plugins/jwt";
 import { and, asc, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
@@ -48,8 +53,24 @@ const userOptions = {
 			input: false,
 			fieldName: "onboarded_at",
 		},
+		deletionRequestedAt: {
+			type: "date",
+			required: false,
+			input: false,
+			fieldName: "deletion_requested_at",
+		},
 	},
 } as const;
+
+/** Better-auth endpoints a pending-deletion user may still reach: signing in
+ * (recovery IS sign-in), learning their status, and signing out. Everything
+ * else — org management, billing, api keys, JWT minting — is refused. */
+const PENDING_DELETION_ALLOWED_PATH_PREFIXES = [
+	"/sign-in",
+	"/callback",
+	"/get-session",
+	"/sign-out",
+];
 
 const NOTIFY_SLACK_URL = `${env.NEXT_PUBLIC_API_URL}/api/integrations/stripe/jobs/notify-slack`;
 const desktopDevPort = process.env.DESKTOP_VITE_PORT || "5173";
@@ -100,6 +121,7 @@ export const auth = betterAuth({
 		...desktopDevOrigins,
 		"superset://app",
 		"superset://",
+		"https://appleid.apple.com",
 		...(process.env.NODE_ENV === "development"
 			? ["exp://", "exp://**", "exp://192.168.*.*:*/**"]
 			: []),
@@ -114,6 +136,26 @@ export const auth = betterAuth({
 		},
 	},
 	user: userOptions,
+	hooks: {
+		before: createAuthMiddleware(async (ctx) => {
+			if (
+				PENDING_DELETION_ALLOWED_PATH_PREFIXES.some((prefix) =>
+					ctx.path.startsWith(prefix),
+				)
+			) {
+				return;
+			}
+			const session = await getSessionFromCtx(ctx);
+			if (
+				(session?.user as { deletionRequestedAt?: Date | null })
+					?.deletionRequestedAt
+			) {
+				throw new APIError("FORBIDDEN", {
+					message: "Account is pending deletion.",
+				});
+			}
+		}),
+	},
 	advanced: {
 		crossSubDomainCookies: {
 			enabled: true,
@@ -123,10 +165,14 @@ export const auth = betterAuth({
 			generateId: false,
 		},
 	},
+	// Credential sign-IN stays available in production for the App Store
+	// review demo account (see seed-review-account.ts); sign-UP remains
+	// dev/preview-only.
 	emailAndPassword: {
-		enabled:
-			process.env.NODE_ENV === "development" ||
-			process.env.VERCEL_ENV === "preview",
+		enabled: true,
+		disableSignUp:
+			process.env.NODE_ENV !== "development" &&
+			process.env.VERCEL_ENV !== "preview",
 		autoSignIn: true,
 	},
 	socialProviders: {
@@ -137,6 +183,11 @@ export const auth = betterAuth({
 		google: {
 			clientId: env.GOOGLE_CLIENT_ID,
 			clientSecret: env.GOOGLE_CLIENT_SECRET,
+		},
+		apple: {
+			clientId: env.APPLE_CLIENT_ID,
+			clientSecret: env.APPLE_CLIENT_SECRET,
+			appBundleIdentifier: env.APPLE_APP_BUNDLE_IDENTIFIER,
 		},
 	},
 	databaseHooks: {
@@ -200,39 +251,39 @@ export const auth = betterAuth({
 							.where(eq(authSchema.sessions.userId, user.id));
 					}
 
-					try {
-						await resend.emails.send({
-							from: "Superset <noreply@superset.sh>",
-							replyTo: "founders@superset.sh",
-							to: user.email,
-							subject: "Welcome to Superset",
-							react: WelcomeEmail({
-								userName: user.name,
-								userEmail: user.email,
-							}),
-						});
-					} catch (error) {
-						console.error(
-							`[lifecycle] Failed to send welcome email to ${user.id}:`,
-							error,
-						);
-					}
+					const variant = await getActivationVariant(user.id);
+					if (variant === "test") {
+						try {
+							await resend.emails.send({
+								from: "Superset <noreply@superset.sh>",
+								replyTo: "founders@superset.sh",
+								to: user.email,
+								subject: "Welcome to Superset",
+								react: WelcomeEmail({
+									userName: user.name,
+									userEmail: user.email,
+								}),
+							});
+						} catch (error) {
+							console.error(
+								`[lifecycle] Failed to send welcome email to ${user.id}:`,
+								error,
+							);
+						}
 
-					try {
-						const variant = await getActivationVariant(user.id);
-						if (variant === "test") {
+						try {
 							const { error } = await resend.events.send({
 								event: "user.signed_up",
 								email: user.email,
 								payload: { userId: user.id, name: user.name },
 							});
 							if (error) throw new Error(error.message);
+						} catch (error) {
+							console.error(
+								`[lifecycle] Failed to emit signup event for ${user.id}:`,
+								error,
+							);
 						}
-					} catch (error) {
-						console.error(
-							`[lifecycle] Failed to emit signup event for ${user.id}:`,
-							error,
-						);
 					}
 				},
 			},
@@ -844,11 +895,15 @@ export const auth = betterAuth({
 				// explicitly so the onboarding gate is deterministic.
 				const userRow = await db.query.users.findFirst({
 					where: eq(authSchema.users.id, user.id),
-					columns: { onboardedAt: true },
+					columns: { onboardedAt: true, deletionRequestedAt: true },
 				});
 
 				return {
-					user: { ...user, onboardedAt: userRow?.onboardedAt ?? null },
+					user: {
+						...user,
+						onboardedAt: userRow?.onboardedAt ?? null,
+						deletionRequestedAt: userRow?.deletionRequestedAt ?? null,
+					},
 					session: {
 						...session,
 						activeOrganizationId,

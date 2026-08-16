@@ -10,14 +10,38 @@ import {
 } from "react";
 import { env } from "renderer/env.renderer";
 import { authClient } from "renderer/lib/auth-client";
+import {
+	CLOUD_TRPC_ROUTER_ROOTS,
+	cloudTrpc,
+	setCloudOrganizationId,
+} from "renderer/lib/cloud-trpc";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { electronTrpcClient } from "renderer/lib/trpc-client";
+import { electronQueryClient } from "renderer/providers/ElectronTRPCProvider/ElectronTRPCProvider";
 import { MOCK_ORG_ID } from "shared/constants";
 import {
 	evictInactiveOrgCollections,
 	getCollections,
 	preloadCollections,
 } from "./collections";
+
+// Cloud query procedures take no organizationId input (the server scopes by
+// active org), so their React Query keys don't encode the org — on org switch
+// the previous org's rows must be dropped, not just marked stale.
+const ORG_SCOPED_CLOUD_ROUTERS = new Set<string>(CLOUD_TRPC_ROUTER_ROOTS);
+
+function dropCloudQueriesForOrgSwitch(): void {
+	electronQueryClient.removeQueries({
+		predicate: (query) => {
+			const head = query.queryKey[0];
+			return (
+				Array.isArray(head) &&
+				typeof head[0] === "string" &&
+				ORG_SCOPED_CLOUD_ROUTERS.has(head[0])
+			);
+		},
+	});
+}
 
 type CollectionsContextType = ReturnType<typeof getCollections> & {
 	activeOrganizationId: string;
@@ -60,6 +84,11 @@ export function CollectionsProvider({ children }: { children: ReactNode }) {
 		string | null
 	>(null);
 
+	// Account-wide ("the orgs I belong to"), so it is not affected by — and does
+	// not depend on — the org header this provider sets.
+	const { data: organizations } =
+		cloudTrpc.organization.list.useQuery(undefined);
+
 	// Initialize the window's org exactly once. After this, the window's org is
 	// owned by local state (and switchOrganization); later — possibly transient —
 	// reads of the registry never override it. This prevents an empty/transient
@@ -70,11 +99,29 @@ export function CollectionsProvider({ children }: { children: ReactNode }) {
 	useEffect(() => {
 		if (initializedRef.current) return;
 		if (windowOrgPending) return;
-		const resolved = windowOrgId ?? sessionOrgId ?? null;
+		// The registry's org is only preferred while it is still one the user
+		// belongs to. Leaving an organization (or having membership revoked
+		// elsewhere) leaves a dead id in the registry, and adopting it would pin
+		// the window to an org whose every read now fails. Until the membership
+		// list has loaded we cannot tell stale from valid, so wait rather than
+		// guess — the window is showing nothing yet either way.
+		const registryOrgIsStillMine =
+			windowOrgId != null &&
+			organizations != null &&
+			organizations.some((organization) => organization.id === windowOrgId);
+		if (windowOrgId != null && organizations == null) return;
+		const resolved =
+			(registryOrgIsStillMine ? windowOrgId : sessionOrgId) ?? null;
 		if (!resolved) return;
 		initializedRef.current = true;
 		setActiveOrganizationId(resolved);
-	}, [windowOrgPending, windowOrgId, sessionOrgId]);
+	}, [windowOrgPending, windowOrgId, sessionOrgId, organizations]);
+
+	// Scope this window's cloud reads to its own org, during render rather than
+	// in an effect: children below issue their first queries while this render
+	// commits, and an effect would let those go out on the session's org — the
+	// other window's data — before correcting itself.
+	setCloudOrganizationId(activeOrganizationId);
 
 	// Keep the main-process window registry in sync with this window's active
 	// org. Declarative and idempotent: re-asserted whenever the org changes, so
@@ -101,10 +148,9 @@ export function CollectionsProvider({ children }: { children: ReactNode }) {
 			switchInFlightRef.current = true;
 			try {
 				// Window-local switch: warm the new org's collections, then flip the
-				// UI. The registry is updated by the sync effect above when
-				// activeOrganizationId changes. The shared login session is NOT
-				// mutated, so other windows are unaffected; each org's collections use
-				// their own org-pinned API client. On failure the UI stays put.
+				// UI. The registry and the cloud org header follow from
+				// activeOrganizationId changing. The shared login session is NOT
+				// mutated, so other windows are unaffected. On failure the UI stays put.
 				await preloadCollections(organizationId);
 				setActiveOrganizationId(organizationId);
 			} catch (error) {
@@ -119,15 +165,22 @@ export function CollectionsProvider({ children }: { children: ReactNode }) {
 		[activeOrganizationId],
 	);
 
+	const previousOrganizationIdRef = useRef<string | null>(null);
 	useEffect(() => {
 		preloadActiveOrganizationCollections(activeOrganizationId);
-		// Once the active org is current (its collections are already cached by the
-		// `collections` memo above, which runs during render), evict every prior
-		// org's set to free the synced tables they hold. This effect is the single
-		// trigger for all switch paths, including callers that set the active org
-		// directly without going through `switchOrganization`.
+		// Once the active org is current, evict every prior org's local
+		// collection set. This effect is the single trigger for all switch
+		// paths, including callers that set the active org directly without
+		// going through `switchOrganization`.
 		if (activeOrganizationId) {
 			evictInactiveOrgCollections(activeOrganizationId);
+			if (
+				previousOrganizationIdRef.current &&
+				previousOrganizationIdRef.current !== activeOrganizationId
+			) {
+				dropCloudQueriesForOrgSwitch();
+			}
+			previousOrganizationIdRef.current = activeOrganizationId;
 		}
 	}, [activeOrganizationId]);
 
