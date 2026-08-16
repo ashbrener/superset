@@ -13,6 +13,7 @@
 			"!**/*.template.sh",
 			"!**/*.template.ts",
 			"!**/plans",
+			"!**/*.generated.ts",
 			"!apps/mobile/uniwind-types.d.ts",
 			"!packages/sdk/src"
 		]
@@ -89,9 +90,8 @@
 			// Legacy on-loop sync-subprocess call sites, frozen by the
 			// no-*-blocking ratchet tests — delete entries here as they're fixed.
 			"includes": [
-				"apps/desktop/src/main/lib/agent-setup/utils.ts",
 				"apps/desktop/src/main/lib/terminal-host/client.ts",
-				"packages/chat-legacy/src/server/desktop/auth/anthropic/anthropic.ts",
+				"packages/provider-auth/src/server/auth/anthropic/anthropic.ts",
 				"packages/host-service/src/providers/model-providers/LocalModelProvider/utils/resolveAnthropicCredential.ts",
 				"packages/pty-daemon/src/process-tree.ts",
 				"packages/shared/src/host-info.ts"

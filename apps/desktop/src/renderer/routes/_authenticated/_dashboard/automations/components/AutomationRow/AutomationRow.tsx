@@ -1,12 +1,9 @@
-import type {
-	SelectAutomation,
-	SelectAutomationRun,
-	SelectUser,
-} from "@superset/db/schema";
+import type { SelectAutomationRun, SelectUser } from "@superset/db/schema";
 import {
 	describeSchedule,
 	formatDateTimeInTimezone,
 } from "@superset/shared/rrule";
+import type { RouterOutputs } from "@superset/trpc";
 import { Button } from "@superset/ui/button";
 import {
 	ContextMenu,
@@ -28,8 +25,10 @@ import type { ProjectOption } from "renderer/routes/_authenticated/components/Da
 import { ProjectThumbnail } from "renderer/routes/_authenticated/components/ProjectThumbnail";
 import { AutomationActionsMenuItems } from "./components/AutomationActionsMenuItems";
 
+type AutomationListItem = RouterOutputs["automation"]["list"][number];
+
 interface AutomationRowProps {
-	automation: SelectAutomation;
+	automation: AutomationListItem;
 	owner: Pick<SelectUser, "id" | "name" | "email"> | undefined;
 	showOwner: boolean;
 	project: ProjectOption | undefined;
@@ -42,9 +41,9 @@ interface AutomationRowProps {
 	isOwner: boolean;
 	/** True while a run/retry dispatch for this automation is in flight. */
 	isRetrying: boolean;
-	onRunNow: (automation: SelectAutomation) => void;
-	onToggleEnabled: (automation: SelectAutomation) => void;
-	onDelete: (automation: SelectAutomation) => void;
+	onRunNow: (automation: AutomationListItem) => void;
+	onToggleEnabled: (automation: AutomationListItem) => void;
+	onDelete: (automation: AutomationListItem) => void;
 }
 
 // A run's terminal success state is workspace creation — say so.
@@ -56,6 +55,10 @@ const LAST_RUN_META: Record<
 	dispatching: { dot: "bg-amber-500", label: "creating" },
 	skipped_offline: { dot: "bg-red-500", label: "failed", failed: true },
 	dispatch_failed: { dot: "bg-red-500", label: "failed", failed: true },
+	// Neither created a workspace, so neither is `failed` — that flag offers to
+	// open one.
+	debounced: { dot: "bg-slate-400", label: "superseded" },
+	rejected: { dot: "bg-amber-500", label: "blocked" },
 };
 
 function compactUntil(at: number, now: Date): string {
@@ -112,7 +115,6 @@ export function AutomationRow({
 			params: { workspaceId: lastRun.v2WorkspaceId },
 			search: {
 				terminalId: lastRun.terminalSessionId ?? undefined,
-				chatSessionId: lastRun.chatSessionId ?? undefined,
 			},
 		});
 	};
