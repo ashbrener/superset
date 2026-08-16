@@ -1,5 +1,3 @@
-import type { IncomingMessage } from "node:http";
-import type { Duplex } from "node:stream";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app";
 import { getSupervisor, startDaemonBootstrap } from "./daemon";
@@ -10,8 +8,9 @@ import {
 } from "./providers/auth";
 import { LocalGitCredentialProvider } from "./providers/git";
 import { PskHostAuthProvider } from "./providers/host-auth";
-import { LocalModelProvider } from "./providers/model-providers";
-import { installProcessSafetyNet } from "./safety";
+import { provisionAgentIntegrations } from "./runtime/agent-provisioning";
+import { applyLoginShellEnvToProcess } from "./runtime/login-shell-env";
+import { installProcessSafetyNet, installUpgradeSocketGuard } from "./safety";
 import { captureFatalStartupError, initSentry } from "./sentry";
 import { startTerminalBaseEnvResolution } from "./terminal/env";
 import { startTerminalReaper } from "./terminal/reaper";
@@ -29,6 +28,12 @@ async function main(): Promise<void> {
 	// snapshot; every other request path is unaffected.
 	startTerminalBaseEnvResolution();
 
+	// Standalone entry only: the desktop already merges the login-shell PATH
+	// into hosts it spawns. Fire-and-forget for the same reason as the base-env
+	// resolution above; git/gh calls racing the probe just see the launcher env
+	// once, same as before this merge existed.
+	void applyLoginShellEnvToProcess();
+
 	// Fire-and-track: kick off pty-daemon spawn-or-adopt without blocking
 	// host-service startup. Terminal request handlers `await
 	// waitForDaemonReady(orgId)` before using the supervisor's socket path,
@@ -36,6 +41,11 @@ async function main(): Promise<void> {
 	// Non-terminal requests (workspaces, git, chat) are unaffected if the
 	// daemon takes time to come up or fails entirely.
 	startDaemonBootstrap(env.ORGANIZATION_ID);
+
+	// Standalone entry only: the desktop provisions these itself for hosts it
+	// spawns (with its per-agent disable settings); this covers CLI/systemd
+	// launches, which previously had no notify hooks or shell wrappers (#6254).
+	provisionAgentIntegrations();
 
 	const configTokenSource = env.SUPERSET_AUTH_CONFIG_PATH
 		? new ConfigFileSessionTokenSource({
@@ -65,7 +75,6 @@ async function main(): Promise<void> {
 			auth: authProvider,
 			hostAuth: new PskHostAuthProvider(env.HOST_SERVICE_SECRET),
 			credentials: new LocalGitCredentialProvider(),
-			modelResolver: new LocalModelProvider(),
 		},
 	});
 
@@ -116,21 +125,7 @@ async function main(): Promise<void> {
 			});
 		}
 	});
-	// Node detaches its own socket error handling before emitting 'upgrade',
-	// and @hono/node-ws awaits app.request() before ws adopts the socket — a
-	// peer reset in that window is an uncaught ECONNRESET at TCP.onStreamRead
-	// that takes down the whole process. Keep a listener attached for the
-	// socket's lifetime so resets are logged instead.
-	server.on("upgrade", (request: IncomingMessage, socket: Duplex) => {
-		// Path only: the upgrade URL's query string carries HOST_SERVICE_SECRET
-		// as `token` for relayed connections.
-		const requestPath = request.url?.split("?")[0] ?? "<unknown>";
-		socket.on("error", (error: NodeJS.ErrnoException) => {
-			console.warn(
-				`[host-service] upgrade socket error (${error.code ?? error.message}) on ${requestPath} from ${request.socket.remoteAddress ?? "<unknown>"}`,
-			);
-		});
-	});
+	installUpgradeSocketGuard(server);
 	injectWebSocket(server);
 }
 

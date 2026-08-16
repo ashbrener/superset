@@ -19,7 +19,6 @@ import {
 	FakeApiAuthProvider,
 	type FakeApiOverrides,
 	FakeHostAuthProvider,
-	FakeModelResolver,
 	MemoryGitCredentialProvider,
 } from "./fakes";
 
@@ -35,14 +34,11 @@ export interface TestHostOptions {
 	/**
 	 * Fake-runtime overrides typed as `unknown` so tests only need to
 	 * implement the methods they exercise — the real surfaces (Octokit,
-	 * ChatRuntimeManager, ChatService) are far too large to stub fully.
+	 * ChatService) are far too large to stub fully.
 	 */
 	githubFactory?: () => Promise<unknown>;
 	execGh?: (args: string[], options?: unknown) => Promise<unknown>;
-	chatRuntime?: unknown;
 	chatService?: unknown;
-	/** Injecting a manager also opens the acpSessions feature gate (app.ts). */
-	acpSessions?: unknown;
 }
 
 export interface TestHost {
@@ -105,7 +101,6 @@ export async function createTestHost(
 			auth: new FakeApiAuthProvider(),
 			hostAuth: new FakeHostAuthProvider(psk),
 			credentials: new MemoryGitCredentialProvider(options.githubToken ?? null),
-			modelResolver: new FakeModelResolver(),
 		},
 		db: db as unknown as HostDb,
 		api: fakeApi.client,
@@ -119,9 +114,7 @@ export async function createTestHost(
 				async () => {
 					throw new Error("execGh not configured in test");
 				},
-		chatRuntime: options.chatRuntime as CreateAppOptions["chatRuntime"],
 		chatService: options.chatService as CreateAppOptions["chatService"],
-		acpSessions: options.acpSessions as CreateAppOptions["acpSessions"],
 	};
 
 	const result = createApp(createOptions);
