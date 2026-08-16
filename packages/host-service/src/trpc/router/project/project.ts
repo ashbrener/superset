@@ -9,7 +9,6 @@ import { TRPCError } from "@trpc/server";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import {
-	acpSessions,
 	projects,
 	terminalAgentBindings,
 	terminalSessions,
@@ -918,18 +917,11 @@ export const projectRouter = router({
 								),
 							)
 							.run();
-						// `workspace_id` on these two is plain text with no foreign key,
-						// so the project cascade never reaches them — delete explicitly.
-						// Live ACP adapters are owned by the manager, not by these rows;
-						// dropping the registry only stops this host from resurrecting
-						// sessions for a project it no longer serves.
+						// `workspace_id` here is plain text with no foreign key, so the
+						// project cascade never reaches it — delete explicitly.
 						ctx.db
 							.delete(terminalAgentBindings)
 							.where(inArray(terminalAgentBindings.workspaceId, workspaceIds))
-							.run();
-						ctx.db
-							.delete(acpSessions)
-							.where(inArray(acpSessions.workspaceId, workspaceIds))
 							.run();
 					}
 

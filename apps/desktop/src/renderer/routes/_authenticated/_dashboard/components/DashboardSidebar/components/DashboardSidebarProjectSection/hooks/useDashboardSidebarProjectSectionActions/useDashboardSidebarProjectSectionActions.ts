@@ -1,16 +1,15 @@
 import { alert } from "@superset/ui/atoms/Alert";
 import { toast } from "@superset/ui/sonner";
-import { useLiveQuery } from "@tanstack/react-db";
 import { useNavigate } from "@tanstack/react-router";
 import { useMemo, useRef, useState } from "react";
 import { useHostProjects } from "renderer/hooks/host-projects/useHostProjects";
 import { useHostUrl } from "renderer/hooks/host-service/useHostTargetUrl";
+import { cloudTrpc } from "renderer/lib/cloud-trpc";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { electronTrpcClient } from "renderer/lib/trpc-client";
 import { useDashboardSidebarSectionRename } from "renderer/routes/_authenticated/_dashboard/components/DashboardSidebar/components/DashboardSidebarSectionRenameContext";
 import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
 import { useMoveProjectToOrganization } from "renderer/routes/_authenticated/hooks/useMoveProjectToOrganization";
-import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { useOpenNewWorkspaceModal } from "renderer/stores/new-workspace-modal";
 import { useWorkspaceCreates } from "renderer/stores/workspace-creates";
@@ -58,13 +57,10 @@ export function useDashboardSidebarProjectSectionActions({
 		toggleSectionCollapsed,
 	} = useDashboardSidebarState();
 
-	// Orgs the user belongs to, minus the one showing this project. The
-	// `organizations` collection is unscoped — it is exactly "orgs I'm in".
-	const collections = useCollections();
-	const { data: organizations } = useLiveQuery(
-		(q) => q.from({ organizations: collections.organizations }),
-		[collections],
-	);
+	// Orgs the user belongs to, minus the one showing this project. The list is
+	// unscoped — it is exactly "orgs I'm in".
+	const { data: organizations } =
+		cloudTrpc.organization.list.useQuery(undefined);
 	const { activeOrganizationId } = useLocalHostService();
 	const moveTargetOrganizations = useMemo(
 		() =>
