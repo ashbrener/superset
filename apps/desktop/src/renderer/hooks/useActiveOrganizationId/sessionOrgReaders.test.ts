@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
+// biome-ignore lint/style/noRestrictedImports: test file needs fs/path for source verification
 import { readdirSync, readFileSync, statSync } from "node:fs";
+// biome-ignore lint/style/noRestrictedImports: test file needs fs/path for source verification
 import { join } from "node:path";
 
 /**

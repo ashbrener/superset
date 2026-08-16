@@ -387,40 +387,74 @@ describe("isValidPersistedWindow", () => {
 	};
 
 	it("accepts a window with a string orgId and valid state", () => {
-		expect(isValidPersistedWindow({ orgId: "org-a", state: validState })).toBe(
-			true,
-		);
+		expect(
+			isValidPersistedWindow({ key: "w-1", orgId: "org-a", state: validState }),
+		).toBe(true);
 	});
 
 	it("accepts a window with a null orgId (no org yet)", () => {
-		expect(isValidPersistedWindow({ orgId: null, state: validState })).toBe(
-			true,
-		);
+		expect(
+			isValidPersistedWindow({ key: "w-1", orgId: null, state: validState }),
+		).toBe(true);
 	});
 
 	it("rejects a missing orgId field", () => {
-		expect(isValidPersistedWindow({ state: validState })).toBe(false);
-	});
-
-	it("rejects a non-string, non-null orgId", () => {
-		expect(isValidPersistedWindow({ orgId: 123, state: validState })).toBe(
+		expect(isValidPersistedWindow({ key: "w-1", state: validState })).toBe(
 			false,
 		);
 	});
 
+	it("rejects a non-string, non-null orgId", () => {
+		expect(
+			isValidPersistedWindow({ key: "w-1", orgId: 123, state: validState }),
+		).toBe(false);
+	});
+
 	it("rejects an invalid inner state", () => {
 		expect(
-			isValidPersistedWindow({ orgId: "org-a", state: { width: 0 } }),
+			isValidPersistedWindow({
+				key: "w-1",
+				orgId: "org-a",
+				state: { width: 0 },
+			}),
 		).toBe(false);
 	});
 
 	it("rejects a missing state", () => {
-		expect(isValidPersistedWindow({ orgId: "org-a" })).toBe(false);
+		expect(isValidPersistedWindow({ key: "w-1", orgId: "org-a" })).toBe(false);
 	});
 
 	it("rejects non-object values", () => {
 		expect(isValidPersistedWindow(null)).toBe(false);
 		expect(isValidPersistedWindow("nope")).toBe(false);
 		expect(isValidPersistedWindow([])).toBe(false);
+	});
+});
+
+describe("per-window keys", () => {
+	const validState = {
+		x: 100,
+		y: 200,
+		width: 800,
+		height: 600,
+		isMaximized: false,
+	};
+
+	it("rejects a persisted window with no key", () => {
+		expect(isValidPersistedWindow({ orgId: "org-a", state: validState })).toBe(
+			false,
+		);
+	});
+
+	it("rejects an empty key", () => {
+		expect(
+			isValidPersistedWindow({ key: "", orgId: null, state: validState }),
+		).toBe(false);
+	});
+
+	it("accepts a keyed window", () => {
+		expect(
+			isValidPersistedWindow({ key: "w-1", orgId: null, state: validState }),
+		).toBe(true);
 	});
 });

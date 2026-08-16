@@ -35,18 +35,18 @@ beforeEach(() => {
 describe("window registry", () => {
 	test("register then read entry and org", () => {
 		const win = makeWindow(1);
-		registerWindow({ window: win, orgId: "org-a" });
+		registerWindow({ window: win, orgId: "org-a", key: "key-14" });
 		expect(getEntry(1)?.window).toBe(win);
 		expect(getOrg(1)).toBe("org-a");
 	});
 
 	test("registering with null org returns null org", () => {
-		registerWindow({ window: makeWindow(2), orgId: null });
+		registerWindow({ window: makeWindow(2), orgId: null, key: "key-207" });
 		expect(getOrg(2)).toBeNull();
 	});
 
 	test("setOrg updates an existing entry", () => {
-		registerWindow({ window: makeWindow(1), orgId: "org-a" });
+		registerWindow({ window: makeWindow(1), orgId: "org-a", key: "key-662" });
 		setOrg({ windowId: 1, orgId: "org-b" });
 		expect(getOrg(1)).toBe("org-b");
 	});
@@ -57,7 +57,7 @@ describe("window registry", () => {
 	});
 
 	test("unregister removes the entry", () => {
-		registerWindow({ window: makeWindow(1), orgId: "org-a" });
+		registerWindow({ window: makeWindow(1), orgId: "org-a", key: "key-662" });
 		unregisterWindow(1);
 		expect(getEntry(1)).toBeUndefined();
 		expect(getOrg(1)).toBeNull();
@@ -66,8 +66,8 @@ describe("window registry", () => {
 	test("getAllWindows returns only live windows", () => {
 		const live = makeWindow(1);
 		const dead = makeWindow(2) as BrowserWindow & { __destroy: () => void };
-		registerWindow({ window: live, orgId: null });
-		registerWindow({ window: dead, orgId: null });
+		registerWindow({ window: live, orgId: null, key: "key-648" });
+		registerWindow({ window: dead, orgId: null, key: "key-958" });
 		dead.__destroy();
 		expect(getAllWindows()).toEqual([live]);
 	});
@@ -75,8 +75,8 @@ describe("window registry", () => {
 	test("getFocusedOrLastWindow prefers the most-recently-focused live window", () => {
 		const a = makeWindow(1);
 		const b = makeWindow(2);
-		registerWindow({ window: a, orgId: null });
-		registerWindow({ window: b, orgId: null });
+		registerWindow({ window: a, orgId: null, key: "key-295" });
+		registerWindow({ window: b, orgId: null, key: "key-118" });
 		// b registered last -> currently most recent
 		expect(getFocusedOrLastWindow()).toBe(b);
 		markFocused(1);
@@ -86,8 +86,8 @@ describe("window registry", () => {
 	test("getFocusedOrLastWindow skips destroyed windows", () => {
 		const a = makeWindow(1);
 		const b = makeWindow(2) as BrowserWindow & { __destroy: () => void };
-		registerWindow({ window: a, orgId: null });
-		registerWindow({ window: b, orgId: null });
+		registerWindow({ window: a, orgId: null, key: "key-295" });
+		registerWindow({ window: b, orgId: null, key: "key-118" });
 		b.__destroy(); // most-recent but dead
 		expect(getFocusedOrLastWindow()).toBe(a);
 	});
@@ -95,7 +95,7 @@ describe("window registry", () => {
 	test("getFocusedOrLastWindow returns null with no live windows", () => {
 		expect(getFocusedOrLastWindow()).toBeNull();
 		const a = makeWindow(1);
-		registerWindow({ window: a, orgId: null });
+		registerWindow({ window: a, orgId: null, key: "key-295" });
 		unregisterWindow(1);
 		expect(getFocusedOrLastWindow()).toBeNull();
 	});

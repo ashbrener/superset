@@ -4,52 +4,80 @@ import {
 	browserManager,
 	type ForwardedKey,
 } from "main/lib/browser/browser-manager";
+import { getKey } from "main/lib/window-registry/window-registry";
 import { z } from "zod";
 import { publicProcedure, router } from "../..";
+
+/**
+ * Pane ids are unique within a window, not across windows: two windows
+ * restoring the same layout hold the same ids, and BrowserManager keys its
+ * WebContents map by pane id alone — so the second window's registration
+ * silently replaced the first window's. Namespacing by the calling window's
+ * persisted key keeps them apart.
+ *
+ * Falls back to the bare pane id when the sender is not a resolvable window
+ * (a `<webview>` guest), which is the single-window behaviour.
+ */
+function scopedPaneId(
+	ctx: { senderWindow: Electron.BrowserWindow | null },
+	paneId: string,
+): string {
+	const key = ctx.senderWindow ? getKey(ctx.senderWindow.id) : null;
+	return key ? `${key}::${paneId}` : paneId;
+}
 
 export const createBrowserRouter = () => {
 	return router({
 		register: publicProcedure
 			.input(z.object({ paneId: z.string(), webContentsId: z.number() }))
-			.mutation(({ input }) => {
-				browserManager.register(input.paneId, input.webContentsId);
+			.mutation(({ ctx, input }) => {
+				browserManager.register(
+					scopedPaneId(ctx, input.paneId),
+					input.webContentsId,
+				);
 				return { success: true };
 			}),
 
 		unregister: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.mutation(({ input }) => {
-				browserManager.unregister(input.paneId);
+			.mutation(({ ctx, input }) => {
+				browserManager.unregister(scopedPaneId(ctx, input.paneId));
 				return { success: true };
 			}),
 
 		navigate: publicProcedure
 			.input(z.object({ paneId: z.string(), url: z.string() }))
-			.mutation(({ input }) => {
-				browserManager.navigate(input.paneId, input.url);
+			.mutation(({ ctx, input }) => {
+				browserManager.navigate(scopedPaneId(ctx, input.paneId), input.url);
 				return { success: true };
 			}),
 
 		goBack: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.mutation(({ input }) => {
-				const wc = browserManager.getWebContents(input.paneId);
+			.mutation(({ ctx, input }) => {
+				const wc = browserManager.getWebContents(
+					scopedPaneId(ctx, input.paneId),
+				);
 				if (wc?.canGoBack()) wc.goBack();
 				return { success: true };
 			}),
 
 		goForward: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.mutation(({ input }) => {
-				const wc = browserManager.getWebContents(input.paneId);
+			.mutation(({ ctx, input }) => {
+				const wc = browserManager.getWebContents(
+					scopedPaneId(ctx, input.paneId),
+				);
 				if (wc?.canGoForward()) wc.goForward();
 				return { success: true };
 			}),
 
 		reload: publicProcedure
 			.input(z.object({ paneId: z.string(), hard: z.boolean().optional() }))
-			.mutation(({ input }) => {
-				const wc = browserManager.getWebContents(input.paneId);
+			.mutation(({ ctx, input }) => {
+				const wc = browserManager.getWebContents(
+					scopedPaneId(ctx, input.paneId),
+				);
 				if (!wc) return { success: false };
 				if (input.hard) {
 					wc.reloadIgnoringCache();
@@ -61,16 +89,18 @@ export const createBrowserRouter = () => {
 
 		screenshot: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.mutation(async ({ input }) => {
-				const base64 = await browserManager.screenshot(input.paneId);
+			.mutation(async ({ ctx, input }) => {
+				const base64 = await browserManager.screenshot(
+					scopedPaneId(ctx, input.paneId),
+				);
 				return { base64 };
 			}),
 
 		evaluateJS: publicProcedure
 			.input(z.object({ paneId: z.string(), code: z.string() }))
-			.mutation(async ({ input }) => {
+			.mutation(async ({ ctx, input }) => {
 				const result = await browserManager.evaluateJS(
-					input.paneId,
+					scopedPaneId(ctx, input.paneId),
 					input.code,
 				);
 				return { result };
@@ -78,13 +108,13 @@ export const createBrowserRouter = () => {
 
 		getConsoleLogs: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.query(({ input }) => {
-				return browserManager.getConsoleLogs(input.paneId);
+			.query(({ ctx, input }) => {
+				return browserManager.getConsoleLogs(scopedPaneId(ctx, input.paneId));
 			}),
 
 		consoleStream: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.subscription(({ input }) => {
+			.subscription(({ ctx, input }) => {
 				return observable<{
 					level: string;
 					message: string;
@@ -97,65 +127,95 @@ export const createBrowserRouter = () => {
 					}) => {
 						emit.next(entry);
 					};
-					browserManager.on(`console:${input.paneId}`, handler);
+					browserManager.on(
+						`console:${scopedPaneId(ctx, input.paneId)}`,
+						handler,
+					);
 					return () => {
-						browserManager.off(`console:${input.paneId}`, handler);
+						browserManager.off(
+							`console:${scopedPaneId(ctx, input.paneId)}`,
+							handler,
+						);
 					};
 				});
 			}),
 
 		onNewWindow: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.subscription(({ input }) => {
+			.subscription(({ ctx, input }) => {
 				return observable<{ url: string }>((emit) => {
 					const handler = (url: string) => {
 						emit.next({ url });
 					};
-					browserManager.on(`new-window:${input.paneId}`, handler);
+					browserManager.on(
+						`new-window:${scopedPaneId(ctx, input.paneId)}`,
+						handler,
+					);
 					return () => {
-						browserManager.off(`new-window:${input.paneId}`, handler);
+						browserManager.off(
+							`new-window:${scopedPaneId(ctx, input.paneId)}`,
+							handler,
+						);
 					};
 				});
 			}),
 
 		onContextMenuAction: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.subscription(({ input }) => {
+			.subscription(({ ctx, input }) => {
 				return observable<{ action: string; url: string }>((emit) => {
 					const handler = (data: { action: string; url: string }) => {
 						emit.next(data);
 					};
-					browserManager.on(`context-menu-action:${input.paneId}`, handler);
+					browserManager.on(
+						`context-menu-action:${scopedPaneId(ctx, input.paneId)}`,
+						handler,
+					);
 					return () => {
-						browserManager.off(`context-menu-action:${input.paneId}`, handler);
+						browserManager.off(
+							`context-menu-action:${scopedPaneId(ctx, input.paneId)}`,
+							handler,
+						);
 					};
 				});
 			}),
 
 		onClosePane: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.subscription(({ input }) => {
+			.subscription(({ ctx, input }) => {
 				return observable<void>((emit) => {
 					const handler = () => {
 						emit.next();
 					};
-					browserManager.on(`close-pane:${input.paneId}`, handler);
+					browserManager.on(
+						`close-pane:${scopedPaneId(ctx, input.paneId)}`,
+						handler,
+					);
 					return () => {
-						browserManager.off(`close-pane:${input.paneId}`, handler);
+						browserManager.off(
+							`close-pane:${scopedPaneId(ctx, input.paneId)}`,
+							handler,
+						);
 					};
 				});
 			}),
 
 		onReloadPane: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.subscription(({ input }) => {
+			.subscription(({ ctx, input }) => {
 				return observable<void>((emit) => {
 					const handler = () => {
 						emit.next();
 					};
-					browserManager.on(`reload-pane:${input.paneId}`, handler);
+					browserManager.on(
+						`reload-pane:${scopedPaneId(ctx, input.paneId)}`,
+						handler,
+					);
 					return () => {
-						browserManager.off(`reload-pane:${input.paneId}`, handler);
+						browserManager.off(
+							`reload-pane:${scopedPaneId(ctx, input.paneId)}`,
+							handler,
+						);
 					};
 				});
 			}),
@@ -173,29 +233,37 @@ export const createBrowserRouter = () => {
 		// renderer into its hotkey system (guest focus hides them from the host).
 		onKeyForward: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.subscription(({ input }) => {
+			.subscription(({ ctx, input }) => {
 				return observable<ForwardedKey>((emit) => {
 					const handler = (key: ForwardedKey) => {
 						emit.next(key);
 					};
-					browserManager.on(`key-forward:${input.paneId}`, handler);
+					browserManager.on(
+						`key-forward:${scopedPaneId(ctx, input.paneId)}`,
+						handler,
+					);
 					return () => {
-						browserManager.off(`key-forward:${input.paneId}`, handler);
+						browserManager.off(
+							`key-forward:${scopedPaneId(ctx, input.paneId)}`,
+							handler,
+						);
 					};
 				});
 			}),
 
 		openDevTools: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.mutation(({ input }) => {
-				browserManager.openDevTools(input.paneId);
+			.mutation(({ ctx, input }) => {
+				browserManager.openDevTools(scopedPaneId(ctx, input.paneId));
 				return { success: true };
 			}),
 
 		getPageInfo: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.query(({ input }) => {
-				const wc = browserManager.getWebContents(input.paneId);
+			.query(({ ctx, input }) => {
+				const wc = browserManager.getWebContents(
+					scopedPaneId(ctx, input.paneId),
+				);
 				if (!wc) return null;
 				return {
 					url: wc.getURL(),

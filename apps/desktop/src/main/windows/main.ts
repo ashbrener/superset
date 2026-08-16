@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import * as Sentry from "@sentry/electron/main";
 import { workspaces, worktrees } from "@superset/local-db";
@@ -18,7 +19,7 @@ import {
 import type { AgentLifecycleEvent } from "shared/notification-types";
 import { createIPCHandler } from "trpc-electron/main";
 import { productName } from "~/package.json";
-import { appState } from "../lib/app-state";
+import { appState, pruneWindowScopedState } from "../lib/app-state";
 import { browserManager } from "../lib/browser/browser-manager";
 import { attachEditContextMenu } from "../lib/edit-context-menu";
 import { createApplicationMenu } from "../lib/menu";
@@ -38,6 +39,7 @@ import { recordV1TerminalExit } from "../lib/notifications/v1-agent-sessions";
 import {
 	getAllWindows,
 	getFocusedOrLastWindow,
+	getKey,
 	getOrg,
 	markFocused,
 	registerWindow,
@@ -292,7 +294,15 @@ function snapshotWindowState(window: BrowserWindow): WindowState {
 export function persistOpenWindows(): void {
 	const persisted: PersistedWindow[] = getAllWindows()
 		.filter((w) => !w.isDestroyed())
-		.map((w) => ({ orgId: getOrg(w.id), state: snapshotWindowState(w) }));
+		.map((w) => ({
+			key: getKey(w.id) ?? randomUUID(),
+			orgId: getOrg(w.id),
+			state: snapshotWindowState(w),
+		}));
+	// Per-window UI state is keyed by these, so anything belonging to a window
+	// that is no longer restorable is dropped here rather than accumulating in
+	// app-state.json forever.
+	pruneWindowScopedState(persisted.map((w) => w.key));
 	// Write unconditionally — an empty array clears stale restore state when the
 	// last window closes, so previously-closed windows aren't reopened next launch.
 	saveWindows(persisted);
@@ -302,7 +312,11 @@ export function persistOpenWindows(): void {
 export async function restoreWindows(): Promise<void> {
 	const saved = loadWindows();
 	for (const pw of saved) {
-		await createPlatformWindow({ orgId: pw.orgId, bounds: pw.state });
+		await createPlatformWindow({
+			orgId: pw.orgId,
+			bounds: pw.state,
+			key: pw.key,
+		});
 	}
 }
 
@@ -320,13 +334,17 @@ export async function restoreWindows(): Promise<void> {
  *               per-window organization context (Milestone 2); may be null
  *               until the renderer resolves a default.
  * @param bounds Optional saved bounds to restore (used by window restore).
+ * @param key    The window's persisted identity. Supplied when restoring so the
+ *               window finds its own tab layout again; minted for a new window.
  */
 export async function createPlatformWindow({
 	orgId,
 	bounds,
+	key,
 }: {
 	orgId: string | null;
 	bounds?: WindowState;
+	key?: string;
 }): Promise<BrowserWindow> {
 	initAppServices();
 
@@ -373,7 +391,7 @@ export async function createPlatformWindow({
 		},
 	});
 
-	registerWindow({ window, orgId });
+	registerWindow({ window, orgId, key: key ?? randomUUID() });
 	window.on("focus", () => markFocused(window.id));
 
 	attachEditContextMenu(window.webContents);

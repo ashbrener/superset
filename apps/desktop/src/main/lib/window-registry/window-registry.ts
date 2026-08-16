@@ -16,6 +16,11 @@ import type { BrowserWindow } from "electron";
 export interface WindowEntry {
 	window: BrowserWindow;
 	orgId: string | null;
+	/**
+	 * Stable across relaunches, unlike `window.id`. Anything persisted per
+	 * window (its tab layout, its browser panes) is keyed by this.
+	 */
+	key: string;
 }
 
 const registry = new Map<number, WindowEntry>();
@@ -36,12 +41,24 @@ function moveToEnd(windowId: number): void {
 export function registerWindow({
 	window,
 	orgId,
+	key,
 }: {
 	window: BrowserWindow;
 	orgId: string | null;
+	key: string;
 }): void {
-	registry.set(window.id, { window, orgId });
+	registry.set(window.id, { window, orgId, key });
 	moveToEnd(window.id);
+}
+
+/** The persisted identity of a window, or null if it is not registered. */
+export function getKey(windowId: number): string | null {
+	return registry.get(windowId)?.key ?? null;
+}
+
+/** Every registered window's key — the set persisted state may keep. */
+export function getAllKeys(): string[] {
+	return [...registry.values()].map((entry) => entry.key);
 }
 
 export function unregisterWindow(windowId: number): void {
