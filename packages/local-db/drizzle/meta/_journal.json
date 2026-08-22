@@ -337,6 +337,20 @@
       "when": 1786655483726,
       "tag": "0047_restore_persist_terminal_column",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1787182989255,
+      "tag": "0048_burly_vargas",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "6",
+      "when": 1787260502122,
+      "tag": "0049_breezy_caretaker",
+      "breakpoints": true
     }
   ]
 }

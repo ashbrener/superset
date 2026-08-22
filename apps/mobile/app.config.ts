@@ -1,6 +1,7 @@
 import path from "node:path";
 import { config } from "dotenv";
 import type { ConfigContext } from "expo/config";
+import { withIosAccentColor } from "./config-plugins/withIosAccentColor";
 
 // Load .env file
 config({
@@ -44,7 +45,15 @@ export default ({ config }: ConfigContext) => ({
 		bundler: "metro",
 	},
 	plugins: [
+		[withIosAccentColor, { color: "#FFFFFF" }],
 		"expo-router",
+		[
+			"@sentry/react-native/expo",
+			{
+				organization: "superset-sh",
+				project: "mobile",
+			},
+		],
 		"expo-localization",
 		"expo-apple-authentication",
 		[
@@ -60,13 +69,6 @@ export default ({ config }: ConfigContext) => ({
 		],
 		"expo-document-picker",
 		[
-			"expo-media-library",
-			{
-				photosPermission:
-					"Superset shows your recent photos so you can attach them to chats.",
-			},
-		],
-		[
 			"expo-speech-recognition",
 			{
 				microphonePermission:
@@ -75,6 +77,23 @@ export default ({ config }: ConfigContext) => ({
 					"Superset uses speech recognition to turn your voice into text.",
 			},
 		],
+		// The composer is built on Liquid Glass, which silently no-ops before
+		// iOS 26 — an iOS 26 floor means one visual language instead of a glass
+		// path plus a solid fallback. See plans/20260821-native-composer.md.
+		[
+			"expo-build-properties",
+			{
+				ios: { deploymentTarget: "26.0" },
+			},
+		],
+		// SDK 57 no longer autolinks config plugins; every installed plugin has
+		// to be listed or its native setup is silently skipped.
+		"expo-asset",
+		"expo-font",
+		"expo-image",
+		"expo-secure-store",
+		"expo-status-bar",
+		"expo-web-browser",
 	],
 	extra: {
 		router: {},

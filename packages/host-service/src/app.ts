@@ -13,23 +13,29 @@ import { EventBus, GitWatcher, registerEventBusRoute } from "./events";
 import type { ApiAuthProvider } from "./providers/auth";
 import type { HostAuthProvider } from "./providers/host-auth";
 import { runArchivedWorkspaceReconcile } from "./runtime/archived-workspace-reconcile";
+import { registerBrowserCdpRoute } from "./runtime/browser-bridge/browser-cdp-route";
 import { WorkspaceFilesystemManager } from "./runtime/filesystem";
 import type { GitCredentialProvider } from "./runtime/git";
 import { createGitEnvResolver, createGitFactory } from "./runtime/git";
 import { runMainWorkspaceSweep } from "./runtime/main-workspace-sweep";
 import { runProjectBackfill } from "./runtime/project-backfill";
 import { PullRequestRuntimeManager } from "./runtime/pull-requests";
+import {
+	readSandboxIdentity,
+	runSandboxSelfSeed,
+} from "./runtime/sandbox-self-seed";
 import { registerWorkspaceTerminalRoute } from "./terminal/terminal";
 import {
 	SqliteTerminalAgentBindingPersistence,
 	TerminalAgentStore,
 } from "./terminal-agents";
 import { appRouter } from "./trpc/router";
+import { provisionSelectedAccounts } from "./trpc/router/usage/account-provisioning";
 import {
 	execGh as defaultExecGh,
 	type ExecGh,
 } from "./trpc/router/workspace-creation/utils/exec-gh";
-import type { ApiClient } from "./types";
+import type { ApiClient, BrowserBridgeConfig } from "./types";
 import { getHostWorkerPool } from "./workers/host-worker-pool";
 import { gitWorkspaceRefsTask } from "./workers/tasks/git";
 
@@ -40,6 +46,8 @@ export interface CreateAppOptions {
 		cloudApiUrl: string;
 		migrationsFolder: string;
 		allowedOrigins: string[];
+		/** Loopback surface for driving desktop browser panes; desktop-only. */
+		browserBridge?: BrowserBridgeConfig;
 	};
 	providers: {
 		auth: ApiAuthProvider;
@@ -76,6 +84,11 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		options.api ??
 		createApiClient(config.cloudApiUrl, providers.auth, config.organizationId);
 	const db = options.db ?? createDb(config.dbPath, config.migrationsFolder);
+	// A sandbox is provisioned for exactly one workspace, and the env says
+	// which. Seeding it here rather than from the API keeps the schema in one
+	// place and leaves provisioning with nothing to orchestrate.
+	const sandboxIdentity = readSandboxIdentity();
+	if (sandboxIdentity) runSandboxSelfSeed(db, sandboxIdentity);
 	const git = createGitFactory(providers.credentials);
 	const github =
 		options.github ??
@@ -184,7 +197,16 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 	// Startup sweeps run in the background so they don't block server
 	// startup. Ordering matters: the project backfill fills identity fields
 	// on pre-existing rows before the main-workspace sweep touches them.
+	//
+	// None of them run in a sandbox. Every one repairs state a long-lived
+	// machine accumulates — rows that predate a column, a delete a previous
+	// process crashed out of — and a sandbox is provisioned fresh with exactly
+	// one project and one workspace, seeded by us, that no earlier build ever
+	// touched. There is nothing to recover, so the sweeps can only invent:
+	// the main-workspace sweep already added a phantom second workspace here
+	// before bootstrap started seeding `type='main'`.
 	void (async () => {
+		if (process.env.SUPERSET_HOST_RUN_MODE === "sandbox") return;
 		await runProjectBackfill({
 			db,
 			eventBus,
@@ -218,6 +240,12 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		}).catch((err) => {
 			console.warn("[host-service] archived-workspace reconcile failed:", err);
 		});
+		// Re-share the default account's Claude/Codex config into the selected
+		// provider profiles. Last: it touches no host state the sweeps above
+		// repair, and a slow filesystem must not delay them.
+		await provisionSelectedAccounts(db).catch((err) => {
+			console.warn("[host-service] account provisioning failed:", err);
+		});
 	})();
 
 	const wsAuth: MiddlewareHandler = async (c, next) => {
@@ -231,8 +259,14 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 	app.use("/terminal/*", wsAuth);
 	app.use("/events", wsAuth);
 	app.use("/chat-v3/*", wsAuth);
+	app.use("/browser/*", wsAuth);
 
 	registerEventBusRoute({ app, eventBus, upgradeWebSocket });
+	registerBrowserCdpRoute({
+		app,
+		upgradeWebSocket,
+		getBridge: () => config.browserBridge,
+	});
 	registerWorkspaceTerminalRoute({
 		app,
 		db,
@@ -245,6 +279,14 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 		"/trpc/*",
 		trpcServer({
 			router: appRouter,
+			// Renderer clients send every request (including queries) as POST —
+			// see WorkspaceClientProvider/host-service-client's methodOverride —
+			// so a query with a large input (e.g. git.getDiffBulk's file-path
+			// list, or a same-tick batch across many workspaces) doesn't produce
+			// a GET URL long enough to blow past the header-size limit. Without
+			// this flag trpc's default HTTP-method map rejects those POSTs with
+			// METHOD_NOT_SUPPORTED before the query ever runs.
+			allowMethodOverride: true,
 			createContext: async (_opts, c) => {
 				const isAuthenticated = await providers.hostAuth.validate(c.req.raw);
 				return {
@@ -261,6 +303,7 @@ export function createApp(options: CreateAppOptions): CreateAppResult {
 					isAuthenticated,
 					clientMachineId:
 						c.req.header("x-superset-client-machine-id") ?? undefined,
+					browserBridge: config.browserBridge,
 				} as Record<string, unknown>;
 			},
 		}),

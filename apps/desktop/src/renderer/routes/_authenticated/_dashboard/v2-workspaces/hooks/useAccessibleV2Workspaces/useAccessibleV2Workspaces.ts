@@ -2,11 +2,11 @@ import type { CheckItem } from "@superset/local-db";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { env } from "renderer/env.renderer";
 import { resolveProjectIconUrl } from "renderer/hooks/host-projects/resolveProjectIconUrl";
 import { useHostProjects } from "renderer/hooks/host-projects/useHostProjects";
 import { deriveTerminalAgentStatus } from "renderer/hooks/host-service/useTerminalAgentStatuses";
 import { useHostWorkspacesSource } from "renderer/hooks/host-workspaces/useHostWorkspaces";
+import { useActiveOrganizationId } from "renderer/hooks/useActiveOrganizationId";
 import { useHostsPresence } from "renderer/hooks/useHostsPresence";
 import { useRelayUrl } from "renderer/hooks/useRelayUrl";
 import { authClient } from "renderer/lib/auth-client";
@@ -19,6 +19,7 @@ import {
 	PROJECT_FILTER_SESSIONS,
 	type V2WorkspacesAgentStatusFilter,
 	type V2WorkspacesDeviceFilter,
+	type V2WorkspacesPinFilter,
 	type V2WorkspacesPrStateFilter,
 } from "renderer/routes/_authenticated/_dashboard/v2-workspaces/stores/v2WorkspacesFilterStore";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
@@ -26,7 +27,6 @@ import { isSidebarWorkspaceVisible } from "renderer/routes/_authenticated/provid
 import { useHostWorkspaces } from "renderer/routes/_authenticated/providers/HostWorkspacesProvider";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { useV2NotificationStore } from "renderer/stores/v2-notifications";
-import { MOCK_ORG_ID } from "shared/constants";
 import { type PaneStatus, pickHigherStatus } from "shared/tabs-types";
 
 export type V2WorkspaceHostType = "local-device" | "remote-device";
@@ -141,6 +141,8 @@ interface UseAccessibleV2WorkspacesOptions {
 	prStateFilters?: V2WorkspacesPrStateFilter[];
 	/** Empty/omitted = any agent status. */
 	agentStatusFilters?: V2WorkspacesAgentStatusFilter[];
+	/** Omitted = "all" — sidebar-pinned and unpinned alike. */
+	pinFilter?: V2WorkspacesPinFilter;
 	/**
 	 * Also surface archived tombstones (with `archivedAt` set). Requires a
 	 * device filter — the archived fetch rides the scoped host source.
@@ -184,6 +186,19 @@ function matchesPrStateFilters(
 	return workspace.pr != null && prStateFilters.includes(workspace.pr.state);
 }
 
+function matchesPinFilter(
+	workspace: AccessibleV2Workspace,
+	pinFilter: V2WorkspacesPinFilter,
+): boolean {
+	if (pinFilter === "all") return true;
+	// Archived tombstones may keep stale sidebar metadata; they are never
+	// pinned regardless of what that metadata says.
+	if (workspace.archivedAt !== null) return pinFilter === "unpinned";
+	return pinFilter === "pinned"
+		? workspace.isInSidebar
+		: !workspace.isInSidebar;
+}
+
 function matchesAgentStatusFilters(
 	workspace: AccessibleV2Workspace,
 	agentStatusFilters: V2WorkspacesAgentStatusFilter[],
@@ -213,14 +228,17 @@ export function useAccessibleV2Workspaces(
 	const projectFilters = options.projectFilters ?? [];
 	const prStateFilters = options.prStateFilters ?? [];
 	const agentStatusFilters = options.agentStatusFilters ?? [];
+	const pinFilter = options.pinFilter ?? "all";
 	const { data: session } = authClient.useSession();
 	const collections = useCollections();
 	const { machineId, activeHostUrl } = useLocalHostService();
 	const relayUrl = useRelayUrl();
 
-	const activeOrganizationId = env.SKIP_ENV_VALIDATION
-		? MOCK_ORG_ID
-		: (session?.session?.activeOrganizationId ?? null);
+	// Per-window org. Every row below is filtered against this id, and the rows
+	// are served by the window's own host service — so reading the shared
+	// session's org here drops all of them in any window that switched, and the
+	// dashboard renders empty.
+	const activeOrganizationId = useActiveOrganizationId();
 	const currentUserId = session?.user?.id ?? null;
 
 	// With a specific device filter (the page), rows come from a single
@@ -714,9 +732,16 @@ export function useAccessibleV2Workspaces(
 				(workspace) =>
 					matchesProjectFilters(workspace, projectFilters) &&
 					matchesPrStateFilters(workspace, prStateFilters) &&
-					matchesAgentStatusFilters(workspace, agentStatusFilters),
+					matchesAgentStatusFilters(workspace, agentStatusFilters) &&
+					matchesPinFilter(workspace, pinFilter),
 			),
-		[searchFiltered, projectFilters, prStateFilters, agentStatusFilters],
+		[
+			searchFiltered,
+			projectFilters,
+			prStateFilters,
+			agentStatusFilters,
+			pinFilter,
+		],
 	);
 
 	// Hosts come straight from the (locally cached) hosts collections so the

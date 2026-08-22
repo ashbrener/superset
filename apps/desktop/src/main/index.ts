@@ -6,15 +6,7 @@ import {
 	writeSharedDisabledAgentIds,
 } from "@superset/agent-setup";
 import { settings } from "@superset/local-db";
-import {
-	app,
-	BrowserWindow,
-	dialog,
-	Notification,
-	net,
-	protocol,
-	session,
-} from "electron";
+import { app, dialog, Notification, net, protocol, session } from "electron";
 import { makeAppSetup } from "lib/electron-app/factories/app/setup";
 import {
 	authEvents,
@@ -32,6 +24,7 @@ import {
 import { initAppState } from "./lib/app-state";
 import { requestAppleEventsAccess } from "./lib/apple-events-permission";
 import { isUpdateReadyToInstall, setupAutoUpdater } from "./lib/auto-updater";
+import { startBrowserBridge } from "./lib/browser/browser-bridge";
 import { installBundledCliShim } from "./lib/bundled-cli";
 import { resolveDevWorkspaceName } from "./lib/dev-workspace-name";
 import { setWorkspaceDockIcon } from "./lib/dock-icon";
@@ -43,6 +36,7 @@ import {
 	initTanstackDbPersistence,
 	shutdownTanstackDbPersistence,
 } from "./lib/persistence/persistence";
+import { syncInstalledPluginMcpServers } from "./lib/plugin-installs";
 import { ensureProjectIconsDir, getProjectIconPath } from "./lib/project-icons";
 import { runQuitCleanup } from "./lib/quit-sequence";
 import { initSentry } from "./lib/sentry";
@@ -55,8 +49,15 @@ import {
 	getTerminalHostClient,
 } from "./lib/terminal-host/client";
 import { disposeTray, initTray } from "./lib/tray";
+import { getFocusedOrLastWindow } from "./lib/window-registry/window-registry";
 import { sweepNetworkLogs } from "./network-logger-sweep";
-import { MainWindow } from "./windows/main";
+import {
+	createPlatformWindow,
+	initAppServices,
+	markAppQuitting,
+	persistOpenWindows,
+	restoreWindows,
+} from "./windows/main";
 
 console.log("[main] Local database ready:", !!localDb);
 const IS_DEV = process.env.NODE_ENV === "development";
@@ -117,10 +118,8 @@ async function processDeepLink(url: string): Promise<void> {
 	const path = `/${url.split("://")[1]}`;
 	focusMainWindow();
 
-	const windows = BrowserWindow.getAllWindows();
-	if (windows.length > 0) {
-		windows[0].webContents.send("deep-link-navigate", path);
-	}
+	const target = getFocusedOrLastWindow();
+	target?.webContents.send("deep-link-navigate", path);
 }
 
 function findDeepLinkInArgv(argv: string[]): string | undefined {
@@ -128,14 +127,13 @@ function findDeepLinkInArgv(argv: string[]): string | undefined {
 }
 
 export function focusMainWindow(): void {
-	const windows = BrowserWindow.getAllWindows();
-	if (windows.length > 0) {
-		const mainWindow = windows[0];
-		if (mainWindow.isMinimized()) {
-			mainWindow.restore();
+	const target = getFocusedOrLastWindow();
+	if (target) {
+		if (target.isMinimized()) {
+			target.restore();
 		}
-		mainWindow.show();
-		mainWindow.focus();
+		target.show();
+		target.focus();
 	} else {
 		// Triggers window creation via makeAppSetup's activate handler
 		app.emit("activate");
@@ -243,6 +241,11 @@ app.on("before-quit", async (event) => {
 	}
 
 	isQuitting = true;
+	// Snapshot all open windows (bounds + org) before they close, so relaunch
+	// restores them. markAppQuitting() stops per-window close handlers from
+	// shrinking the set as windows close one-by-one.
+	markAppQuitting();
+	persistOpenWindows();
 	await runQuitCleanup({
 		isDev,
 		forceFullCleanup,
@@ -417,6 +420,15 @@ if (!gotTheLock) {
 		await reconcileDaemonSessions();
 		prewarmTerminalRuntime();
 
+		// Must be listening before any host-service spawns: the child learns the
+		// bridge endpoint/secret from its env, so a late bridge means browser
+		// control stays dark until the next respawn.
+		try {
+			await startBrowserBridge();
+		} catch (error) {
+			console.error("[main] Failed to start browser bridge:", error);
+		}
+
 		const hostServiceCoordinator = getHostServiceCoordinator();
 		hostServiceCoordinator.setConfigProvider(async () => {
 			const { token } = await loadToken();
@@ -478,6 +490,13 @@ if (!gotTheLock) {
 			console.error("[main] Failed to set up agent integrations:", error);
 		}
 		try {
+			// Converge agent MCP configs on the installed-plugin set, so
+			// installs/uninstalls that missed a mid-session sync land here.
+			syncInstalledPluginMcpServers();
+		} catch (error) {
+			console.error("[main] Failed to sync installed plugins:", error);
+		}
+		try {
 			installBundledCliShim();
 		} catch (error) {
 			console.error("[main] Failed to install bundled CLI shim:", error);
@@ -491,7 +510,11 @@ if (!gotTheLock) {
 			});
 		}
 
-		await makeAppSetup(() => MainWindow());
+		initAppServices();
+		await makeAppSetup(
+			() => createPlatformWindow({ orgId: null }),
+			restoreWindows,
+		);
 		setupAutoUpdater();
 		initTray();
 

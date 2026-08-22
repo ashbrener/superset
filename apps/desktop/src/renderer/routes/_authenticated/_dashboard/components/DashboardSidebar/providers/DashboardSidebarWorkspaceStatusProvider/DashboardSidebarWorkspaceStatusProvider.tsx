@@ -1,4 +1,3 @@
-import { getEventBus } from "@superset/workspace-client";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import {
 	createContext,
@@ -21,7 +20,7 @@ import {
 	type TerminalAgentBinding,
 } from "renderer/hooks/host-service/useTerminalAgentBindings";
 import { deriveTerminalAgentStatus } from "renderer/hooks/host-service/useTerminalAgentStatuses";
-import { getHostServiceWsToken } from "renderer/lib/host-service-auth";
+import { getHostEventBus } from "renderer/lib/host-event-bus";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { useHostWorkspaces } from "renderer/routes/_authenticated/providers/HostWorkspacesProvider";
 import { useV2NotificationStore } from "renderer/stores/v2-notifications";
@@ -177,7 +176,13 @@ export function DashboardSidebarWorkspaceStatusProvider({
 		() =>
 			workspaces.map((workspace) => ({
 				workspaceId: workspace.id,
-				hostUrl: hostWorkspacesCache.resolveHostUrl(workspace.hostId),
+				// A sandbox row gets no live subscription from the sidebar: holding
+				// a socket to it keeps its VM awake for as long as the app is open,
+				// and the sidebar is open all day. Its status goes live when the
+				// workspace itself is opened and its own subscribers connect.
+				hostUrl: hostWorkspacesCache.isSandboxHost(workspace.hostId)
+					? null
+					: hostWorkspacesCache.resolveHostUrl(workspace.hostId),
 			})),
 		[workspaces, hostWorkspacesCache],
 	);
@@ -226,7 +231,7 @@ export function DashboardSidebarWorkspaceStatusProvider({
 		const retainedHostUrls = new Set<string>();
 		for (const { workspaceId, hostUrl } of targets) {
 			if (!hostUrl) continue;
-			const bus = getEventBus(hostUrl, () => getHostServiceWsToken(hostUrl));
+			const bus = getHostEventBus(hostUrl);
 			if (!retainedHostUrls.has(hostUrl)) {
 				retainedHostUrls.add(hostUrl);
 				cleanups.push(bus.retain());

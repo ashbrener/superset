@@ -14,6 +14,7 @@ import {
 } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal";
 import { useHostWorkspaces } from "renderer/routes/_authenticated/providers/HostWorkspacesProvider";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
+import { useSandboxAccess } from "renderer/routes/_authenticated/providers/SandboxAccessProvider";
 import { useWorkspaceTransactionsStore } from "renderer/stores/workspace-creates";
 import type {
 	DashboardSidebarPinnedWorkspace,
@@ -283,6 +284,7 @@ export function useDashboardSidebarData() {
 	);
 
 	const { workspaces: hostWorkspaces } = useHostWorkspaces();
+	const { targets: sandboxes } = useSandboxAccess();
 	const hostWorkspacesById = useMemo(
 		() => new Map(hostWorkspaces.map((workspace) => [workspace.id, workspace])),
 		[hostWorkspaces],
@@ -427,6 +429,7 @@ export function useDashboardSidebarData() {
 					(workspace) => workspace.projectId !== null,
 				),
 				fallbackOrganizationId: knownHostsOrgId,
+				sandboxes,
 			}),
 		[
 			activeHostUrl,
@@ -434,6 +437,7 @@ export function useDashboardSidebarData() {
 			knownHostsOrgId,
 			machineId,
 			relayUrl,
+			sandboxes,
 			visibleSidebarWorkspaces,
 		],
 	);

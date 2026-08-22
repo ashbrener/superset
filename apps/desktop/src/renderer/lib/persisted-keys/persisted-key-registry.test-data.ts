@@ -74,6 +74,7 @@ export const PERSISTED_KEY_REGISTRY: ReadonlyArray<
 	["src/renderer/stores/ports/store.ts", ["ports-store"]],
 	["src/renderer/stores/search-dialog-state.ts", ["search-dialog-store"]],
 	["src/renderer/stores/sidebar-state.ts", ["sidebar-store"]],
+	["src/renderer/stores/new-workspace-width.ts", ["new-workspace-width"]],
 	[
 		"src/renderer/stores/workspace-sidebar-state.ts",
 		["workspace-sidebar-store"],
@@ -93,10 +94,6 @@ export const PERSISTED_KEY_REGISTRY: ReadonlyArray<
 		["v2-changes-sections-v1"],
 	],
 	["src/renderer/stores/v2-notifications/store.ts", ["v2-notifications-v1"]],
-	[
-		"src/renderer/stores/v2-available-banner/store.ts",
-		["v2-available-banner-v1"],
-	],
 	["src/renderer/stores/hiring-banner/store.ts", ["hiring-banner-v1"]],
 	["src/renderer/stores/star-nag/store.ts", ["star-nag-v1"]],
 	[
@@ -116,6 +113,10 @@ export const PERSISTED_KEY_REGISTRY: ReadonlyArray<
 		["desktop-notice-dismissals-v1", "v2-setup-card-dismissals-v1"],
 	],
 	["src/renderer/stores/workspace-agents-row.ts", ["workspace-agents-row"]],
+	[
+		"src/renderer/routes/_authenticated/_dashboard/usage/utils/usageLastSection/usageLastSection.ts",
+		["usage-last-section-v1"],
+	],
 	["src/renderer/stores/inline-workspace-ports.ts", ["inline-workspace-ports"]],
 	["src/renderer/hotkeys/stores/hotkeyOverridesStore.ts", ["hotkey-overrides"]],
 	[
@@ -129,6 +130,10 @@ export const PERSISTED_KEY_REGISTRY: ReadonlyArray<
 	[
 		"src/renderer/routes/_authenticated/_dashboard/pull-requests/stores/pullRequestsFilterStore/pullRequestsFilterStore.ts",
 		["pull-requests-filter-state"],
+	],
+	[
+		"src/renderer/routes/_authenticated/_dashboard/pull-requests/stores/pullRequestsSplitViewStore/pullRequestsSplitViewStore.ts",
+		["pull-requests-split-view-state"],
 	],
 	[
 		"src/renderer/components/PostHogUserIdentifier/PostHogUserIdentifier.tsx",
@@ -169,7 +174,7 @@ export const PERSISTED_KEY_REGISTRY: ReadonlyArray<
 		["superset.terminalRichInputOpen"],
 	],
 	[
-		"src/renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/hooks/usePaneRegistry/components/DiffPane/components/AgentCommentComposer/hooks/useDiffCommentTarget/useDiffCommentTarget.ts",
+		"src/renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/hooks/usePaneRegistry/components/AgentCommentComposer/hooks/useDiffCommentTarget/useDiffCommentTarget.ts",
 		[
 			"lastSelectedDiffCommentNewAgentConfigId",
 			"lastSelectedDiffCommentPlacement",
