@@ -4,8 +4,24 @@ import {
 	type RouterHistory,
 } from "@tanstack/react-router";
 
-const STORAGE_KEY = "router-history";
+const STORAGE_KEY_BASE = "router-history";
 const MAX_ENTRIES = 100;
+
+/**
+ * localStorage is shared by every window of the profile, so a single
+ * "router-history" key meant all windows read and wrote one history: the last
+ * window to navigate decided where *every* window reopened, and a restored
+ * window routinely landed on another window's workspace — in another
+ * organization. Scoping by the window's persisted key gives each window its own
+ * history across relaunches.
+ *
+ * Falls back to the bare key when no window key is present (pre-multi-window
+ * profiles, tests), which is also what makes the first restored window inherit
+ * the existing single-window history instead of starting blank.
+ */
+const STORAGE_KEY = window.App?.windowKey
+	? `${STORAGE_KEY_BASE}:${window.App.windowKey}`
+	: STORAGE_KEY_BASE;
 
 type LocationState = HistoryLocation["state"];
 
