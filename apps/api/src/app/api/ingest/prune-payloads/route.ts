@@ -1,22 +1,20 @@
 import { dbWs } from "@superset/db/client";
-import { Receiver } from "@upstash/qstash";
 import { sql } from "drizzle-orm";
-
-import { env } from "@/env";
+import { verifyQstashRequest } from "@/lib/verifyQstash";
 
 export const dynamic = "force-dynamic";
-
-const receiver = new Receiver({
-	currentSigningKey: env.QSTASH_CURRENT_SIGNING_KEY,
-	nextSigningKey: env.QSTASH_NEXT_SIGNING_KEY,
-});
 
 /**
  * How long a raw payload is worth keeping. Nothing reads it back — its only use
  * is inspecting a delivery by hand, which is a days-old question, not a
  * months-old one. Everything identifying the event outlives it.
+ *
+ * At ~1.16M events/day this is 5-6GB/day: 424GB of TOAST across 102.1M rows
+ * works out to ~4.8GB/day of what is actually on disk, while sampling
+ * pg_column_size gives ~5.2KB per payload and so ~6GB/day. Either way the
+ * window, not the rate, is what sets the table's steady-state size.
  */
-const RETAIN_DAYS = 14;
+const RETAIN_DAYS = 7;
 
 /** Small enough that one statement is a short transaction on a 90M-row table. */
 const BATCH_SIZE = 5_000;
@@ -35,19 +33,12 @@ const TIME_BUDGET_MS = 20_000;
 
 export async function POST(request: Request): Promise<Response> {
 	const body = await request.text();
-	const signature = request.headers.get("upstash-signature");
-	if (!signature) {
-		return Response.json({ error: "Missing signature" }, { status: 401 });
-	}
-
-	const valid = await receiver.verify({
+	const rejected = await verifyQstashRequest(
+		request,
 		body,
-		signature,
-		url: `${env.NEXT_PUBLIC_API_URL}/api/ingest/prune-payloads`,
-	});
-	if (!valid) {
-		return Response.json({ error: "Invalid signature" }, { status: 401 });
-	}
+		"/api/ingest/prune-payloads",
+	);
+	if (rejected) return rejected;
 
 	const startedAt = Date.now();
 	let pruned = 0;

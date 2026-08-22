@@ -5,7 +5,6 @@ import { createAuthRouter } from "./auth";
 import { createAutoUpdateRouter } from "./auto-update";
 import { createBrowserRouter } from "./browser/browser";
 import { createBrowserHistoryRouter } from "./browser-history";
-import { createCacheRouter } from "./cache";
 import { createChangesRouter } from "./changes";
 import { createChatServiceRouter } from "./chat-service";
 import { createConfigRouter } from "./config";
@@ -19,6 +18,7 @@ import { createMenuRouter } from "./menu";
 import { createMigrationRouter } from "./migration";
 import { createNotificationsRouter } from "./notifications";
 import { createPermissionsRouter } from "./permissions";
+import { createPluginsRouter } from "./plugins";
 import { createPortsRouter } from "./ports";
 import { createProjectsRouter } from "./projects";
 import { createResourceMetricsRouter } from "./resource-metrics";
@@ -38,7 +38,6 @@ export const createAppRouter = (getWindow: () => BrowserWindow | null) => {
 		browserHistory: createBrowserHistoryRouter(),
 		auth: createAuthRouter(),
 		autoUpdate: createAutoUpdateRouter(),
-		cache: createCacheRouter(),
 		window: createWindowRouter(),
 		projects: createProjectsRouter(getWindow),
 		workspaces: createWorkspacesRouter(),
@@ -47,6 +46,7 @@ export const createAppRouter = (getWindow: () => BrowserWindow | null) => {
 		filesystem: createFilesystemRouter(),
 		notifications: createNotificationsRouter(getWindow),
 		permissions: createPermissionsRouter(),
+		plugins: createPluginsRouter(),
 		ports: createPortsRouter(),
 		resourceMetrics: createResourceMetricsRouter(),
 		menu: createMenuRouter(),

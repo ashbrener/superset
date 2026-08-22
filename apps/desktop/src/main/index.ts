@@ -24,6 +24,7 @@ import {
 import { initAppState } from "./lib/app-state";
 import { requestAppleEventsAccess } from "./lib/apple-events-permission";
 import { isUpdateReadyToInstall, setupAutoUpdater } from "./lib/auto-updater";
+import { startBrowserBridge } from "./lib/browser/browser-bridge";
 import { installBundledCliShim } from "./lib/bundled-cli";
 import { resolveDevWorkspaceName } from "./lib/dev-workspace-name";
 import { setWorkspaceDockIcon } from "./lib/dock-icon";
@@ -35,6 +36,7 @@ import {
 	initTanstackDbPersistence,
 	shutdownTanstackDbPersistence,
 } from "./lib/persistence/persistence";
+import { syncInstalledPluginMcpServers } from "./lib/plugin-installs";
 import { ensureProjectIconsDir, getProjectIconPath } from "./lib/project-icons";
 import { runQuitCleanup } from "./lib/quit-sequence";
 import { initSentry } from "./lib/sentry";
@@ -418,6 +420,15 @@ if (!gotTheLock) {
 		await reconcileDaemonSessions();
 		prewarmTerminalRuntime();
 
+		// Must be listening before any host-service spawns: the child learns the
+		// bridge endpoint/secret from its env, so a late bridge means browser
+		// control stays dark until the next respawn.
+		try {
+			await startBrowserBridge();
+		} catch (error) {
+			console.error("[main] Failed to start browser bridge:", error);
+		}
+
 		const hostServiceCoordinator = getHostServiceCoordinator();
 		hostServiceCoordinator.setConfigProvider(async () => {
 			const { token } = await loadToken();
@@ -477,6 +488,13 @@ if (!gotTheLock) {
 			setupAgentIntegrations({ disabledAgentIds: disabledAgentHooks });
 		} catch (error) {
 			console.error("[main] Failed to set up agent integrations:", error);
+		}
+		try {
+			// Converge agent MCP configs on the installed-plugin set, so
+			// installs/uninstalls that missed a mid-session sync land here.
+			syncInstalledPluginMcpServers();
+		} catch (error) {
+			console.error("[main] Failed to sync installed plugins:", error);
 		}
 		try {
 			installBundledCliShim();

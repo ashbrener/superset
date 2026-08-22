@@ -15,6 +15,7 @@ import { Button } from "@superset/ui/button";
 import { Input } from "@superset/ui/input";
 import { isEnterSubmit } from "@superset/ui/lib/keyboard";
 import { toast } from "@superset/ui/sonner";
+import { Spinner } from "@superset/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
 import { cn } from "@superset/ui/utils";
 import { useNavigate } from "@tanstack/react-router";
@@ -44,6 +45,7 @@ import { useNewWorkspacePromptContext } from "renderer/stores/new-workspace-prom
 import { useV2WorkspaceCreateDefaultsStore } from "renderer/stores/v2-workspace-create-defaults";
 import { useDashboardNewWorkspaceDraft } from "../../../DashboardNewWorkspaceDraftContext";
 import { DevicePicker } from "../components/DevicePicker";
+import { CLOUD_HOST_ID } from "../components/DevicePicker/DevicePicker";
 import { useWorkspaceHostOptions } from "../components/DevicePicker/hooks/useWorkspaceHostOptions";
 import { AttachmentButtons } from "./components/AttachmentButtons";
 import { CompareBaseBranchPicker } from "./components/CompareBaseBranchPicker";
@@ -310,6 +312,9 @@ export function PromptGroup({
 	const submitBlocker = useMemo<string | null>(() => {
 		if (!projectId && !draft.isSession) return "Select a project";
 		const selectedHostId = draft.hostId ?? machineId;
+		// A cloud workspace is provisioned on submit, so there is no host whose
+		// readiness could block it.
+		if (selectedHostId === CLOUD_HOST_ID) return null;
 		if (!selectedHostId) return "No active host";
 		if (selectedHostId !== machineId) {
 			const remote = otherHosts.find((h) => h.id === selectedHostId);
@@ -336,7 +341,7 @@ export function PromptGroup({
 	});
 
 	// ── Submit (fork) ────────────────────────────────────────────────
-	const createWorkspace = useSubmitWorkspace(
+	const { submitWorkspace: createWorkspace, isCreating } = useSubmitWorkspace(
 		projectId,
 		selectedAgent,
 		modelSupport ? selectedModel : null,
@@ -644,13 +649,17 @@ export function PromptGroup({
 						/>
 						<PromptInputSubmit
 							className="size-[22px] rounded-full border border-transparent bg-foreground/10 shadow-none p-[5px] hover:bg-foreground/20"
-							disabled={needsSetup}
+							disabled={needsSetup || isCreating}
 							onClick={(e) => {
 								e.preventDefault();
 								handleSubmit();
 							}}
 						>
-							<ArrowUpIcon className="size-3.5 text-muted-foreground" />
+							{isCreating ? (
+								<Spinner className="size-3.5 text-muted-foreground" />
+							) : (
+								<ArrowUpIcon className="size-3.5 text-muted-foreground" />
+							)}
 						</PromptInputSubmit>
 					</div>
 				</PromptInputFooter>

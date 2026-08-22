@@ -17,6 +17,7 @@ import { OrganizationInvitationEmail } from "@superset/email/emails/team/invitat
 import { MemberAddedEmail } from "@superset/email/emails/team/member-added";
 import { MemberRemovedEmail } from "@superset/email/emails/team/member-removed";
 import { canInvite, type OrganizationRole } from "@superset/shared/auth";
+import { ACTIVE_SUBSCRIPTION_STATUSES } from "@superset/shared/billing";
 import { getTrustedVercelPreviewOrigins } from "@superset/shared/vercel-preview-origins";
 import { Client } from "@upstash/qstash";
 import { betterAuth } from "better-auth";
@@ -32,8 +33,9 @@ import { and, asc, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type Stripe from "stripe";
 import { env } from "./env";
 import { acceptInvitationEndpoint } from "./lib/accept-invitation-endpoint";
+import { jwksAdapter } from "./lib/cached-jwks";
 import { generateMagicTokenForInvite } from "./lib/generate-magic-token";
-import { getActivationVariant } from "./lib/lifecycle";
+import { loadCustomSessionData } from "./lib/load-custom-session-data";
 import { invitationRateLimit } from "./lib/rate-limit";
 import { resend } from "./lib/resend";
 import {
@@ -251,39 +253,42 @@ export const auth = betterAuth({
 							.where(eq(authSchema.sessions.userId, user.id));
 					}
 
-					const variant = await getActivationVariant(user.id);
-					if (variant === "test") {
-						try {
-							await resend.emails.send({
-								from: "Superset <noreply@superset.sh>",
-								replyTo: "founders@superset.sh",
-								to: user.email,
-								subject: "Welcome to Superset",
-								react: WelcomeEmail({
-									userName: user.name,
-									userEmail: user.email,
-								}),
-							});
-						} catch (error) {
-							console.error(
-								`[lifecycle] Failed to send welcome email to ${user.id}:`,
-								error,
-							);
-						}
+					// Lifecycle emails ship to every signup. The A/B (experiment
+					// 387868) was retired inconclusive: at ~143 signups/day the
+					// diluted intent-to-treat effect would need years to resolve.
+					// Kill switch for the nudges is the Resend automation toggle.
+					try {
+						const { error } = await resend.emails.send({
+							from: "Superset <noreply@superset.sh>",
+							replyTo: "founders@superset.sh",
+							to: user.email,
+							subject: "Welcome to Superset",
+							react: WelcomeEmail({
+								userName: user.name,
+								userEmail: user.email,
+							}),
+						});
+						// Resend reports API failures in `error` rather than throwing.
+						if (error) throw new Error(error.message);
+					} catch (error) {
+						console.error(
+							`[lifecycle] Failed to send welcome email to ${user.id}:`,
+							error,
+						);
+					}
 
-						try {
-							const { error } = await resend.events.send({
-								event: "user.signed_up",
-								email: user.email,
-								payload: { userId: user.id, name: user.name },
-							});
-							if (error) throw new Error(error.message);
-						} catch (error) {
-							console.error(
-								`[lifecycle] Failed to emit signup event for ${user.id}:`,
-								error,
-							);
-						}
+					try {
+						const { error } = await resend.events.send({
+							event: "user.signed_up",
+							email: user.email,
+							payload: { userId: user.id, name: user.name },
+						});
+						if (error) throw new Error(error.message);
+					} catch (error) {
+						console.error(
+							`[lifecycle] Failed to emit signup event for ${user.id}:`,
+							error,
+						);
 					}
 				},
 			},
@@ -302,6 +307,7 @@ export const auth = betterAuth({
 			jwks: {
 				keyPairConfig: { alg: "RS256" },
 			},
+			adapter: jwksAdapter(),
 			jwt: {
 				issuer: env.NEXT_PUBLIC_API_URL,
 				audience: env.NEXT_PUBLIC_API_URL,
@@ -869,40 +875,53 @@ export const auth = betterAuth({
 		customSession(
 			async ({ user, session: baseSession }) => {
 				const session = baseSession as typeof sessions.$inferSelect;
+				const userId = session.userId ?? user.id;
+
+				// Memberships, the active organization's plan and the user's own
+				// flags in one statement. This runs on every authenticated request
+				// in the product, so each extra round trip here is a region-crossing
+				// hop the whole fleet pays for.
+				const data = await loadCustomSessionData({
+					userId,
+					activeOrganizationId: session.activeOrganizationId ?? null,
+				});
+
 				const { activeOrganizationId, allMemberships, membership } =
-					await resolveSessionOrganizationState({
-						userId: session.userId ?? user.id,
-						session,
-					});
+					await resolveSessionOrganizationState(
+						{ userId, session },
+						{ listMemberships: async () => data.memberships },
+					);
 
 				const organizationIds = [
 					...new Set(allMemberships.map((m) => m.organizationId)),
 				];
 
+				// Same statuses the rest of the app gates on — this is the value
+				// the paywall falls back to when the activePlan query can't be
+				// reached, so an "active"-only read here would strand trialing
+				// and past_due organizations on a cold start.
 				let plan: string | null = null;
-				if (activeOrganizationId) {
+				if (activeOrganizationId === data.planOrganizationId) {
+					plan = data.plan;
+				} else if (activeOrganizationId) {
+					// A concurrent request moved the session's active organization
+					// after the query above ran, so the plan it found belongs to the
+					// wrong one. Rare enough to be worth a second read rather than
+					// serialising the common path behind it.
 					const subscription = await db.query.subscriptions.findFirst({
 						where: and(
 							eq(subscriptions.referenceId, activeOrganizationId),
-							eq(subscriptions.status, "active"),
+							inArray(subscriptions.status, ACTIVE_SUBSCRIPTION_STATUSES),
 						),
 					});
 					plan = subscription?.plan ?? null;
 				}
 
-				// additionalFields declares onboardedAt for client typing, but the
-				// drizzle adapter doesn't surface it on the passed-in user — read it
-				// explicitly so the onboarding gate is deterministic.
-				const userRow = await db.query.users.findFirst({
-					where: eq(authSchema.users.id, user.id),
-					columns: { onboardedAt: true, deletionRequestedAt: true },
-				});
-
 				return {
 					user: {
 						...user,
-						onboardedAt: userRow?.onboardedAt ?? null,
-						deletionRequestedAt: userRow?.deletionRequestedAt ?? null,
+						onboardedAt: data.onboardedAt,
+						deletionRequestedAt: data.deletionRequestedAt,
 					},
 					session: {
 						...session,

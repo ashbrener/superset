@@ -1,11 +1,11 @@
-import { getEventBus } from "@superset/workspace-client";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useKnownHosts } from "renderer/hooks/known-hosts/useKnownHosts";
 import { useRelayUrl } from "renderer/hooks/useRelayUrl";
-import { getHostServiceWsToken } from "renderer/lib/host-service-auth";
+import { getHostEventBus } from "renderer/lib/host-event-bus";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
+import { useSandboxAccess } from "renderer/routes/_authenticated/providers/SandboxAccessProvider";
 import {
 	applyWorkspaceChangedEvent,
 	deriveHostWorkspacesQueryTargets,
@@ -25,6 +25,13 @@ const WORKSPACES_FALLBACK_REFETCH_INTERVAL_MS = 30_000;
 export interface HostWorkspacesCacheOps {
 	/** Resolve the URL to reach the host owning `hostId` (null = unreachable). */
 	resolveHostUrl: (hostId: string) => string | null;
+	/**
+	 * Whether `hostId` is a cloud sandbox. Callers that hold a socket per host
+	 * ask this before subscribing: the provider counts a held connection as
+	 * activity, so a background subscription keeps a sandbox's VM awake for as
+	 * long as the app is open. Connect to a sandbox only while it is in view.
+	 */
+	isSandboxHost: (hostId: string) => boolean;
 	/**
 	 * Optimistically upsert a row into a host's cached list. The host's
 	 * `workspace:changed` broadcast (or the next refetch) converges the
@@ -99,6 +106,7 @@ export function useHostWorkspacesSource(
 		organizationId: knownHostsOrgId,
 		settled: knownHostsSettled,
 	} = useKnownHosts();
+	const { targets: sandboxes, isReady: sandboxesReady } = useSandboxAccess();
 
 	const targets = useMemo(() => {
 		const all = deriveHostWorkspacesQueryTargets({
@@ -107,6 +115,7 @@ export function useHostWorkspacesSource(
 			machineId,
 			relayUrl,
 			fallbackOrganizationId: knownHostsOrgId,
+			sandboxes,
 		});
 		return scopedHostId === undefined
 			? all
@@ -117,6 +126,7 @@ export function useHostWorkspacesSource(
 		knownHostsOrgId,
 		machineId,
 		relayUrl,
+		sandboxes,
 		scopedHostId,
 	]);
 
@@ -166,8 +176,15 @@ export function useHostWorkspacesSource(
 			queryFn: async (): Promise<HostWorkspaceRow[]> => {
 				if (!target.hostUrl) return [];
 				const client = getHostServiceClientByUrl(target.hostUrl);
-				const rows =
+				const served =
 					(await client.workspace.list.query()) as HostWorkspaceRow[];
+				// A sandbox reports the machine id of the container it happens to
+				// be running in, which addresses nothing from here. Restate it as
+				// the cloud workspace's id so every host-keyed lookup downstream
+				// (pull requests, agent status, diff stats) resolves.
+				const rows = target.isSandbox
+					? served.map((row) => ({ ...row, hostId: target.machineId }))
+					: served;
 				saveHostWorkspacesSnapshot(
 					target.organizationId,
 					target.machineId,
@@ -207,12 +224,22 @@ export function useHostWorkspacesSource(
 
 	// Live updates: each reachable host's workspace:changed patches its own
 	// cached list without a refetch.
+	//
+	// Not for sandboxes. The provider counts a held connection as activity, so
+	// subscribing here would keep every cloud workspace's VM awake for as long
+	// as the app is open — ten in the sidebar, ten warm machines, whether or not
+	// anyone is looking at them. And there is nothing to be gained: a sandbox
+	// holds exactly one workspace whose identity the cloud row owns; the only
+	// field read off its served row is the branch, which has a fallback and can
+	// only change while someone is inside it — when the open workspace's own
+	// subscribers hold a socket anyway. Sandboxes are polled, and connected to
+	// only while open.
 	useEffect(() => {
 		const cleanups: Array<() => void> = [];
 		for (const target of targets) {
-			if (!target.hostUrl) continue;
+			if (!target.hostUrl || target.isSandbox) continue;
 			const hostUrl = target.hostUrl;
-			const bus = getEventBus(hostUrl, () => getHostServiceWsToken(hostUrl));
+			const bus = getHostEventBus(hostUrl);
 			const removeListener = bus.on(
 				"workspace:changed",
 				"*",
@@ -332,6 +359,9 @@ export function useHostWorkspacesSource(
 	// snapshot settles the host without a live answer).
 	const isReady =
 		knownHostsSettled &&
+		// A cloud workspace is only addressable once its sandbox is brokered, so
+		// answering ready before that flashes not-found on every cloud open.
+		sandboxesReady &&
 		(scopedHostId === undefined || targets.length > 0) &&
 		queries.every(
 			(query, index) =>
@@ -353,6 +383,7 @@ export function useHostWorkspacesSource(
 			targets.find((target) => target.machineId === hostId);
 		return {
 			resolveHostUrl: (hostId) => targetFor(hostId)?.hostUrl ?? null,
+			isSandboxHost: (hostId) => targetFor(hostId)?.isSandbox === true,
 			upsertWorkspace: (row) => {
 				const target = targetFor(row.hostId);
 				if (!target) return;

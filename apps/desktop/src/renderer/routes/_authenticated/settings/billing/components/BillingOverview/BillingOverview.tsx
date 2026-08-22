@@ -177,6 +177,7 @@ export function BillingOverview({ visibleItems }: BillingOverviewProps) {
 								isRestoring={isRestoring}
 								cancelAt={activePlan?.cancelAt}
 								periodEnd={activePlan?.periodEnd}
+								status={activePlan?.status}
 							/>
 							{plan === "free" && (
 								<UpgradeCard

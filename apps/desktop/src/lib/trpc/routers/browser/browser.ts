@@ -1,83 +1,68 @@
 import { observable } from "@trpc/server/observable";
 import { session } from "electron";
 import {
+	type BrowserOpenRequest,
 	browserManager,
 	type ForwardedKey,
 } from "main/lib/browser/browser-manager";
-import { getKey } from "main/lib/window-registry/window-registry";
 import { z } from "zod";
 import { publicProcedure, router } from "../..";
-
-/**
- * Pane ids are unique within a window, not across windows: two windows
- * restoring the same layout hold the same ids, and BrowserManager keys its
- * WebContents map by pane id alone — so the second window's registration
- * silently replaced the first window's. Namespacing by the calling window's
- * persisted key keeps them apart.
- *
- * Falls back to the bare pane id when the sender is not a resolvable window
- * (a `<webview>` guest), which is the single-window behaviour.
- */
-function scopedPaneId(
-	ctx: { senderWindow: Electron.BrowserWindow | null },
-	paneId: string,
-): string {
-	const key = ctx.senderWindow ? getKey(ctx.senderWindow.id) : null;
-	return key ? `${key}::${paneId}` : paneId;
-}
 
 export const createBrowserRouter = () => {
 	return router({
 		register: publicProcedure
-			.input(z.object({ paneId: z.string(), webContentsId: z.number() }))
-			.mutation(({ ctx, input }) => {
+			.input(
+				z.object({
+					paneId: z.string(),
+					webContentsId: z.number(),
+					// Optional: v1 browser panes register without workspace scoping
+					// and stay invisible to the browser bridge.
+					workspaceId: z.string().optional(),
+				}),
+			)
+			.mutation(({ input }) => {
 				browserManager.register(
-					scopedPaneId(ctx, input.paneId),
+					input.paneId,
 					input.webContentsId,
+					input.workspaceId,
 				);
 				return { success: true };
 			}),
 
 		unregister: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.mutation(({ ctx, input }) => {
-				browserManager.unregister(scopedPaneId(ctx, input.paneId));
+			.mutation(({ input }) => {
+				browserManager.unregister(input.paneId);
 				return { success: true };
 			}),
 
 		navigate: publicProcedure
 			.input(z.object({ paneId: z.string(), url: z.string() }))
-			.mutation(({ ctx, input }) => {
-				browserManager.navigate(scopedPaneId(ctx, input.paneId), input.url);
+			.mutation(({ input }) => {
+				browserManager.navigate(input.paneId, input.url);
 				return { success: true };
 			}),
 
 		goBack: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.mutation(({ ctx, input }) => {
-				const wc = browserManager.getWebContents(
-					scopedPaneId(ctx, input.paneId),
-				);
+			.mutation(({ input }) => {
+				const wc = browserManager.getWebContents(input.paneId);
 				if (wc?.canGoBack()) wc.goBack();
 				return { success: true };
 			}),
 
 		goForward: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.mutation(({ ctx, input }) => {
-				const wc = browserManager.getWebContents(
-					scopedPaneId(ctx, input.paneId),
-				);
+			.mutation(({ input }) => {
+				const wc = browserManager.getWebContents(input.paneId);
 				if (wc?.canGoForward()) wc.goForward();
 				return { success: true };
 			}),
 
 		reload: publicProcedure
 			.input(z.object({ paneId: z.string(), hard: z.boolean().optional() }))
-			.mutation(({ ctx, input }) => {
-				const wc = browserManager.getWebContents(
-					scopedPaneId(ctx, input.paneId),
-				);
+			.mutation(({ input }) => {
+				const wc = browserManager.getWebContents(input.paneId);
 				if (!wc) return { success: false };
 				if (input.hard) {
 					wc.reloadIgnoringCache();
@@ -89,32 +74,78 @@ export const createBrowserRouter = () => {
 
 		screenshot: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.mutation(async ({ ctx, input }) => {
-				const base64 = await browserManager.screenshot(
-					scopedPaneId(ctx, input.paneId),
-				);
+			.mutation(async ({ input }) => {
+				const base64 = await browserManager.screenshot(input.paneId);
 				return { base64 };
 			}),
 
 		evaluateJS: publicProcedure
 			.input(z.object({ paneId: z.string(), code: z.string() }))
-			.mutation(async ({ ctx, input }) => {
+			.mutation(async ({ input }) => {
 				const result = await browserManager.evaluateJS(
-					scopedPaneId(ctx, input.paneId),
+					input.paneId,
 					input.code,
 				);
 				return { result };
 			}),
 
+		// --- Design mode (element picker) ---
+		// Enable injects the picker overlay into the guest; disable cancels any
+		// in-flight selection and removes the overlay.
+		designModeSet: publicProcedure
+			.input(z.object({ paneId: z.string(), enabled: z.boolean() }))
+			.mutation(async ({ input }) => {
+				const ok = await browserManager.setDesignMode(
+					input.paneId,
+					input.enabled,
+				);
+				return { ok };
+			}),
+
+		// Long-lived by design: resolves when the user clicks an element, cancels,
+		// navigates away, or the controller's hard timeout fires.
+		designModeAwaitSelection: publicProcedure
+			.input(z.object({ paneId: z.string(), opId: z.string() }))
+			.mutation(({ input }) => {
+				return browserManager.awaitDesignSelection(input.paneId, input.opId);
+			}),
+
+		designModeCancel: publicProcedure
+			.input(z.object({ paneId: z.string() }))
+			.mutation(({ input }) => {
+				browserManager.cancelDesignSelection(input.paneId);
+				return { success: true };
+			}),
+
+		designModeScreenshot: publicProcedure
+			.input(
+				z.object({
+					paneId: z.string(),
+					rect: z.object({
+						x: z.number(),
+						y: z.number(),
+						width: z.number(),
+						height: z.number(),
+					}),
+				}),
+			)
+			.mutation(async ({ input }) => {
+				const screenshot = await browserManager.captureDesignScreenshot(
+					input.paneId,
+					input.rect,
+				);
+				return { screenshot };
+			}),
+
 		getConsoleLogs: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.query(({ ctx, input }) => {
-				return browserManager.getConsoleLogs(scopedPaneId(ctx, input.paneId));
+			.query(({ input }) => {
+				return browserManager.getConsoleLogs(input.paneId);
 			}),
 
 		consoleStream: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.subscription(({ ctx, input }) => {
+			.subscription(({ input }) => {
 				return observable<{
 					level: string;
 					message: string;
@@ -127,95 +158,65 @@ export const createBrowserRouter = () => {
 					}) => {
 						emit.next(entry);
 					};
-					browserManager.on(
-						`console:${scopedPaneId(ctx, input.paneId)}`,
-						handler,
-					);
+					browserManager.on(`console:${input.paneId}`, handler);
 					return () => {
-						browserManager.off(
-							`console:${scopedPaneId(ctx, input.paneId)}`,
-							handler,
-						);
+						browserManager.off(`console:${input.paneId}`, handler);
 					};
 				});
 			}),
 
 		onNewWindow: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.subscription(({ ctx, input }) => {
+			.subscription(({ input }) => {
 				return observable<{ url: string }>((emit) => {
 					const handler = (url: string) => {
 						emit.next({ url });
 					};
-					browserManager.on(
-						`new-window:${scopedPaneId(ctx, input.paneId)}`,
-						handler,
-					);
+					browserManager.on(`new-window:${input.paneId}`, handler);
 					return () => {
-						browserManager.off(
-							`new-window:${scopedPaneId(ctx, input.paneId)}`,
-							handler,
-						);
+						browserManager.off(`new-window:${input.paneId}`, handler);
 					};
 				});
 			}),
 
 		onContextMenuAction: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.subscription(({ ctx, input }) => {
+			.subscription(({ input }) => {
 				return observable<{ action: string; url: string }>((emit) => {
 					const handler = (data: { action: string; url: string }) => {
 						emit.next(data);
 					};
-					browserManager.on(
-						`context-menu-action:${scopedPaneId(ctx, input.paneId)}`,
-						handler,
-					);
+					browserManager.on(`context-menu-action:${input.paneId}`, handler);
 					return () => {
-						browserManager.off(
-							`context-menu-action:${scopedPaneId(ctx, input.paneId)}`,
-							handler,
-						);
+						browserManager.off(`context-menu-action:${input.paneId}`, handler);
 					};
 				});
 			}),
 
 		onClosePane: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.subscription(({ ctx, input }) => {
+			.subscription(({ input }) => {
 				return observable<void>((emit) => {
 					const handler = () => {
 						emit.next();
 					};
-					browserManager.on(
-						`close-pane:${scopedPaneId(ctx, input.paneId)}`,
-						handler,
-					);
+					browserManager.on(`close-pane:${input.paneId}`, handler);
 					return () => {
-						browserManager.off(
-							`close-pane:${scopedPaneId(ctx, input.paneId)}`,
-							handler,
-						);
+						browserManager.off(`close-pane:${input.paneId}`, handler);
 					};
 				});
 			}),
 
 		onReloadPane: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.subscription(({ ctx, input }) => {
+			.subscription(({ input }) => {
 				return observable<void>((emit) => {
 					const handler = () => {
 						emit.next();
 					};
-					browserManager.on(
-						`reload-pane:${scopedPaneId(ctx, input.paneId)}`,
-						handler,
-					);
+					browserManager.on(`reload-pane:${input.paneId}`, handler);
 					return () => {
-						browserManager.off(
-							`reload-pane:${scopedPaneId(ctx, input.paneId)}`,
-							handler,
-						);
+						browserManager.off(`reload-pane:${input.paneId}`, handler);
 					};
 				});
 			}),
@@ -233,37 +234,63 @@ export const createBrowserRouter = () => {
 		// renderer into its hotkey system (guest focus hides them from the host).
 		onKeyForward: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.subscription(({ ctx, input }) => {
+			.subscription(({ input }) => {
 				return observable<ForwardedKey>((emit) => {
 					const handler = (key: ForwardedKey) => {
 						emit.next(key);
 					};
-					browserManager.on(
-						`key-forward:${scopedPaneId(ctx, input.paneId)}`,
-						handler,
-					);
+					browserManager.on(`key-forward:${input.paneId}`, handler);
 					return () => {
-						browserManager.off(
-							`key-forward:${scopedPaneId(ctx, input.paneId)}`,
-							handler,
-						);
+						browserManager.off(`key-forward:${input.paneId}`, handler);
 					};
 				});
 			}),
 
+		// External open requests (CLI/agents via the browser bridge). A global
+		// renderer hook consumes these and routes them through the same
+		// openUrl search-param flow the ports sidebar uses.
+		onOpenRequest: publicProcedure.subscription(() => {
+			return observable<BrowserOpenRequest>((emit) => {
+				const handler = (request: BrowserOpenRequest) => {
+					emit.next(request);
+				};
+				browserManager.on("open-request", handler);
+				return () => {
+					browserManager.off("open-request", handler);
+				};
+			});
+		}),
+
+		// Panes with agent work in flight (a live CDP session or an in-flight
+		// capture). The renderer registry parks these presentable — a
+		// visibility-hidden webview gets no compositor frames, so screenshots
+		// hang — and exempts them from hidden-webview LRU eviction so a pane
+		// isn't destroyed out from under an attached agent. Emits the full set
+		// on every change, plus once on subscribe.
+		onAgentActivePanes: publicProcedure.subscription(() => {
+			return observable<{ paneIds: string[] }>((emit) => {
+				const handler = (state: { paneIds: string[] }) => {
+					emit.next(state);
+				};
+				browserManager.on("agent-active", handler);
+				emit.next({ paneIds: browserManager.getAgentActivePaneIds() });
+				return () => {
+					browserManager.off("agent-active", handler);
+				};
+			});
+		}),
+
 		openDevTools: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.mutation(({ ctx, input }) => {
-				browserManager.openDevTools(scopedPaneId(ctx, input.paneId));
+			.mutation(({ input }) => {
+				browserManager.openDevTools(input.paneId);
 				return { success: true };
 			}),
 
 		getPageInfo: publicProcedure
 			.input(z.object({ paneId: z.string() }))
-			.query(({ ctx, input }) => {
-				const wc = browserManager.getWebContents(
-					scopedPaneId(ctx, input.paneId),
-				);
+			.query(({ input }) => {
+				const wc = browserManager.getWebContents(input.paneId);
 				if (!wc) return null;
 				return {
 					url: wc.getURL(),
