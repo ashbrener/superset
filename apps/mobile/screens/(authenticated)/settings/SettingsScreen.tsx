@@ -5,14 +5,14 @@ import {
 } from "@superset/shared/constants";
 import * as Application from "expo-application";
 import { useRouter } from "expo-router";
-import { Alert, Linking, ScrollView, View } from "react-native";
+import { Alert, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/text";
 import { useDeleteAccount } from "@/hooks/useDeleteAccount";
 import { useSignOut } from "@/hooks/useSignOut";
 import { useTheme } from "@/hooks/useTheme";
 import { useSession } from "@/lib/auth/client";
-import { env } from "@/lib/env";
+import { openUrl } from "@/lib/open-url";
 import { ListRow } from "@/screens/(authenticated)/components/ListRow";
 import { ListRowValue } from "@/screens/(authenticated)/components/ListRowValue";
 import { OrganizationAvatar } from "@/screens/(authenticated)/components/OrganizationAvatar";
@@ -20,13 +20,7 @@ import { useOrganizations } from "@/screens/(authenticated)/hooks/useOrganizatio
 import { SettingsSection } from "./components/SettingsSection";
 import { UserAvatar } from "./components/UserAvatar";
 
-const BILLING_URL = `${env.EXPO_PUBLIC_WEB_URL ?? COMPANY.MARKETING_URL}/settings/billing`;
-
-function openUrl(url: string) {
-	Linking.openURL(url).catch(() => {
-		Alert.alert("Could not open link", url);
-	});
-}
+const WRITE_REVIEW_URL = `${COMPANY.APP_STORE_URL}?action=write-review`;
 
 function ExternalIcon({ color }: { color: string }) {
 	return <Ionicons name="open-outline" size={16} color={color} />;
@@ -67,17 +61,14 @@ export function SettingsScreen() {
 		]);
 	};
 
+	// Informational only. Outside the US storefront, App Store guideline 3.1.1
+	// rejects in-app links to an external purchase page, so the plan row says
+	// where billing lives and stops there.
 	const handleManagePlan = () => {
 		Alert.alert(
-			"Manage Plan on the Web",
-			`You can't change your plan in the app because it's managed on the web at ${COMPANY.DOMAIN}.`,
-			[
-				{ style: "cancel", text: "Dismiss" },
-				{
-					text: `Manage on ${COMPANY.DOMAIN}`,
-					onPress: () => openUrl(BILLING_URL),
-				},
-			],
+			"Plan is managed on the web",
+			`Your organization's plan is managed by its owner at ${COMPANY.DOMAIN}.`,
+			[{ text: "OK" }],
 		);
 	};
 
@@ -175,24 +166,6 @@ export function SettingsScreen() {
 						/>
 					}
 					onPress={() => router.push("/(authenticated)/settings/hosts")}
-				/>
-				<ListRow
-					icon={
-						<Ionicons
-							name="sparkles-outline"
-							size={20}
-							color={theme.mutedForeground}
-						/>
-					}
-					label="Agent presets"
-					trailing={
-						<Ionicons
-							name="chevron-forward"
-							size={18}
-							color={theme.mutedForeground}
-						/>
-					}
-					onPress={() => router.push("/(authenticated)/settings/presets")}
 					isLast
 				/>
 			</SettingsSection>
@@ -229,6 +202,18 @@ export function SettingsScreen() {
 				<ListRow
 					icon={
 						<Ionicons
+							name="logo-discord"
+							size={20}
+							color={theme.mutedForeground}
+						/>
+					}
+					label="Community"
+					trailing={<ExternalIcon color={theme.mutedForeground} />}
+					onPress={() => openUrl(COMPANY.DISCORD_URL)}
+				/>
+				<ListRow
+					icon={
+						<Ionicons
 							name="mail-outline"
 							size={20}
 							color={theme.mutedForeground}
@@ -241,14 +226,14 @@ export function SettingsScreen() {
 				<ListRow
 					icon={
 						<Ionicons
-							name="logo-discord"
+							name="star-outline"
 							size={20}
 							color={theme.mutedForeground}
 						/>
 					}
-					label="Community"
+					label="Rate Superset"
 					trailing={<ExternalIcon color={theme.mutedForeground} />}
-					onPress={() => openUrl(COMPANY.DISCORD_URL)}
+					onPress={() => openUrl(WRITE_REVIEW_URL)}
 					isLast
 				/>
 			</SettingsSection>

@@ -7,8 +7,12 @@ import {
 	JwtApiAuthProvider,
 } from "./providers/auth";
 import { LocalGitCredentialProvider } from "./providers/git";
-import { PskHostAuthProvider } from "./providers/host-auth";
+import {
+	EdgeGuardedHostAuthProvider,
+	PskHostAuthProvider,
+} from "./providers/host-auth";
 import { provisionAgentIntegrations } from "./runtime/agent-provisioning";
+import { resolveBrowserBridgeFromEnv } from "./runtime/browser-bridge/env";
 import { applyLoginShellEnvToProcess } from "./runtime/login-shell-env";
 import { installProcessSafetyNet, installUpgradeSocketGuard } from "./safety";
 import { captureFatalStartupError, initSentry } from "./sentry";
@@ -70,10 +74,14 @@ async function main(): Promise<void> {
 			cloudApiUrl: env.SUPERSET_API_URL,
 			migrationsFolder: env.HOST_MIGRATIONS_FOLDER,
 			allowedOrigins: env.CORS_ORIGINS ?? [],
+			browserBridge: resolveBrowserBridgeFromEnv(env),
 		},
 		providers: {
 			auth: authProvider,
-			hostAuth: new PskHostAuthProvider(env.HOST_SERVICE_SECRET),
+			hostAuth:
+				env.SUPERSET_HOST_RUN_MODE === "sandbox"
+					? new EdgeGuardedHostAuthProvider()
+					: new PskHostAuthProvider(env.HOST_SERVICE_SECRET),
 			credentials: new LocalGitCredentialProvider(),
 		},
 	});
@@ -106,15 +114,21 @@ async function main(): Promise<void> {
 		process.on("SIGTERM", () => void devShutdown("SIGTERM"));
 	}
 
-	const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
+	const hostname =
+		env.SUPERSET_HOST_RUN_MODE === "sandbox" ? undefined : "127.0.0.1";
+	const listen = { fetch: app.fetch, port: env.PORT, hostname };
+	const server = serve(listen, (info) => {
 		// Install only after the server is listening so startup throws still
 		// reach `main().catch(...)` and exit with a non-zero code.
 		installProcessSafetyNet();
-		console.log(`[host-service] listening on http://localhost:${info.port}`);
+		const address = info.address.includes(":")
+			? `[${info.address}]`
+			: info.address;
+		console.log(`[host-service] listening on http://${address}:${info.port}`);
 
 		startTerminalReaper(db);
 
-		if (env.RELAY_URL) {
+		if (env.RELAY_URL && env.SUPERSET_HOST_RUN_MODE !== "sandbox") {
 			void connectRelay({
 				api,
 				relayUrl: env.RELAY_URL,

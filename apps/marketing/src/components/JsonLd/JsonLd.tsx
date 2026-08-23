@@ -36,7 +36,7 @@ export function OrganizationJsonLd() {
 		"@type": "Organization",
 		name: COMPANY.NAME,
 		url: COMPANY.MARKETING_URL,
-		logo: `${COMPANY.MARKETING_URL}/logo.png`,
+		logo: `${COMPANY.MARKETING_URL}/apple-touch-icon.png`,
 		description: "Run 100+ parallel coding agents on your machine",
 		email: supportEmail,
 		contactPoint: {
@@ -95,6 +95,7 @@ interface ArticleJsonLdProps {
 	description?: string;
 	author: ArticleAuthor;
 	publishedTime: string;
+	modifiedTime?: string;
 	url: string;
 	image?: string;
 }
@@ -104,6 +105,7 @@ export function ArticleJsonLd({
 	description,
 	author,
 	publishedTime,
+	modifiedTime,
 	url,
 	image,
 }: ArticleJsonLdProps) {
@@ -128,7 +130,7 @@ export function ArticleJsonLd({
 			},
 		},
 		datePublished: publishedTime,
-		dateModified: publishedTime,
+		dateModified: modifiedTime ?? publishedTime,
 		mainEntityOfPage: {
 			"@type": "WebPage",
 			"@id": url,

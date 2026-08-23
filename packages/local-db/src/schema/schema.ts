@@ -1,3 +1,4 @@
+import type { InstalledPlugin } from "@superset/shared/plugins";
 import {
 	index,
 	integer,
@@ -250,12 +251,16 @@ export const settings = sqliteTable("settings", {
 	showResourceMonitor: integer("show_resource_monitor", { mode: "boolean" }),
 	worktreeBaseDir: text("worktree_base_dir"),
 	openLinksInApp: integer("open_links_in_app", { mode: "boolean" }),
+	browserHomepageUrl: text("browser_homepage_url"),
 	defaultEditor: text("default_editor").$type<ExternalApp>(),
 	exposeHostServiceViaRelay: integer("expose_host_service_via_relay", {
 		mode: "boolean",
 	}),
 	disabledAgentHooks: text("disabled_agent_hooks", { mode: "json" }).$type<
 		string[]
+	>(),
+	installedPlugins: text("installed_plugins", { mode: "json" }).$type<
+		InstalledPlugin[]
 	>(),
 });
 

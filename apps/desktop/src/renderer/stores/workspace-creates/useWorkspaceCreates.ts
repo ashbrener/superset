@@ -1,14 +1,12 @@
-import {
-	getEventBus,
-	type WorkspaceCreateSettledPayload,
-} from "@superset/workspace-client";
+import type { WorkspaceCreateSettledPayload } from "@superset/workspace-client";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback } from "react";
 import { resolveHostUrl } from "renderer/hooks/host-service/useHostTargetUrl";
+import { useActiveOrganizationId } from "renderer/hooks/useActiveOrganizationId";
 import { useRelayUrl } from "renderer/hooks/useRelayUrl";
 import { authClient } from "renderer/lib/auth-client";
 import { electronTrpc } from "renderer/lib/electron-trpc";
-import { getHostServiceWsToken } from "renderer/lib/host-service-auth";
+import { getHostEventBus } from "renderer/lib/host-event-bus";
 import {
 	getHostServiceClientByUrl,
 	type HostServiceClient,
@@ -149,7 +147,7 @@ async function createViaEnqueue(
 	workspaceId: string,
 	payload: WorkspacesCreateInput,
 ): Promise<CreateOutcome> {
-	const bus = getEventBus(hostUrl, () => getHostServiceWsToken(hostUrl));
+	const bus = getHostEventBus(hostUrl);
 	const releaseBus = bus.retain();
 	let unsubscribe: () => void = () => {};
 	try {
@@ -234,7 +232,7 @@ export function useWorkspaceCreates(): UseWorkspaceCreatesApi {
 	const hostService = useLocalHostService();
 	const { machineId, activeHostUrl } = hostService;
 	const { data: session } = authClient.useSession();
-	const organizationId = session?.session?.activeOrganizationId;
+	const organizationId = useActiveOrganizationId();
 	const userId = session?.user?.id ?? null;
 	const collections = useCollections();
 	const { cache: hostWorkspacesCache } = useHostWorkspaces();

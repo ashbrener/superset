@@ -1,3 +1,4 @@
+import type { TriggerConfigInput } from "@superset/shared/automation-triggers";
 import { z } from "zod";
 
 export const taskStatusEnumValues = [
@@ -23,7 +24,17 @@ export const taskPriorityValues = [
 export const taskPriorityEnum = z.enum(taskPriorityValues);
 export type TaskPriority = z.infer<typeof taskPriorityEnum>;
 
-export const integrationProviderValues = ["linear", "github", "slack"] as const;
+export const integrationProviderValues = [
+	"linear",
+	"github",
+	"slack",
+	// Added ahead of their connection flows so every provider agent branches
+	// off one migration rather than each generating its own.
+	"sentry",
+	"microsoft_teams",
+	"google",
+	"notion",
+] as const;
 export const integrationProviderEnum = z.enum(integrationProviderValues);
 export type IntegrationProvider = z.infer<typeof integrationProviderEnum>;
 
@@ -44,21 +55,19 @@ export const commandStatusValues = [
 export const commandStatusEnum = z.enum(commandStatusValues);
 export type CommandStatus = z.infer<typeof commandStatusEnum>;
 
-export const sandboxStatusValues = [
-	"pending",
-	"spawning",
-	"connecting",
-	"warming",
-	"syncing",
+/**
+ * No sleep/wake states: the provider wakes a sandbox on the first inbound
+ * connection, so "asleep" is invisible to callers and could only ever be
+ * reported stale. `ready` means addressable, awake or not.
+ */
+export const cloudWorkspaceStatusValues = [
+	"provisioning",
 	"ready",
-	"running",
-	"stale",
-	"snapshotting",
-	"stopped",
 	"failed",
+	"deleted",
 ] as const;
-export const sandboxStatusEnum = z.enum(sandboxStatusValues);
-export type SandboxStatus = z.infer<typeof sandboxStatusEnum>;
+export const cloudWorkspaceStatusEnum = z.enum(cloudWorkspaceStatusValues);
+export type CloudWorkspaceStatus = z.infer<typeof cloudWorkspaceStatusEnum>;
 
 export const workspaceTypeValues = ["local", "cloud"] as const;
 export const workspaceTypeEnum = z.enum(workspaceTypeValues);
@@ -91,6 +100,11 @@ export const automationPromptSourceValues = [
 export const automationPromptSourceEnum = z.enum(automationPromptSourceValues);
 export type AutomationPromptSource = z.infer<typeof automationPromptSourceEnum>;
 
+/**
+ * Must list exactly the config kinds in `@superset/shared/automation-triggers`
+ * — the `satisfies` below and the `_EveryKindHasEnumValue` check make either
+ * direction of drift a compile error instead of a runtime cast.
+ */
 export const automationTriggerKindValues = [
 	"schedule",
 	"webhook",
@@ -98,7 +112,24 @@ export const automationTriggerKindValues = [
 	"slack",
 	"linear",
 	"sentry",
-] as const;
+	// Same reason as integrationProviderValues: one additive migration up
+	// front, then every provider is a code-only change on top of it.
+	"microsoft_teams",
+	"google_calendar",
+	"gmail",
+	"notion",
+	"circleback",
+] as const satisfies readonly TriggerConfigInput["kind"][];
+
+export type _EveryKindHasEnumValue = [
+	Exclude<
+		TriggerConfigInput["kind"],
+		(typeof automationTriggerKindValues)[number]
+	>,
+] extends [never]
+	? true
+	: never;
+
 export const automationTriggerKindEnum = z.enum(automationTriggerKindValues);
 export type AutomationTriggerKind = z.infer<typeof automationTriggerKindEnum>;
 

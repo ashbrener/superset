@@ -1,6 +1,7 @@
 import { mintUserJwt } from "@superset/auth/server";
 import { dbWs } from "@superset/db/client";
 import {
+	automationEvents,
 	automationRuns,
 	automations,
 	type SelectAutomation,
@@ -17,6 +18,7 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 import { fetchRelayPresence } from "../../lib/relay-presence";
 import { RelayDispatchError, relayMutation } from "./relay-client";
+import { promptWithTriggerContext } from "./triggerContext";
 
 type AgentRunResult = { kind: "terminal"; sessionId: string; label: string };
 
@@ -43,11 +45,22 @@ export type DispatchableAutomation = Pick<
 	| "v2WorkspaceId"
 >;
 
-export interface DispatchOptions {
+/**
+ * What caused this run: a schedule with a due minute (and the schedule trigger
+ * that was due, when the caller knows it), or a matched event.
+ */
+export type DispatchCause =
+	| { scheduledFor: Date; triggerId?: string; trigger?: null }
+	| {
+			scheduledFor?: null;
+			triggerId?: null;
+			trigger: { triggerId: string; eventId: string };
+	  };
+
+export type DispatchOptions = {
 	automation: DispatchableAutomation;
-	scheduledFor: Date;
 	relayUrl: string;
-}
+} & DispatchCause;
 
 /**
  * Run one automation: resolve host, (maybe) create a workspace, start the
@@ -59,22 +72,45 @@ export interface DispatchOptions {
 export async function dispatchAutomation(
 	opts: DispatchOptions,
 ): Promise<DispatchOutcome> {
-	const { automation, scheduledFor, relayUrl } = opts;
+	const { automation, relayUrl } = opts;
+	const cause = runCause(opts);
+
+	// An automation created from the detail page starts without instructions; a
+	// trigger can be armed before they're written, so refuse to run instead of
+	// starting an agent session with an empty prompt.
+	if (automation.prompt.trim().length === 0) {
+		const error = "automation has no instructions";
+		const inserted = await recordUndispatched(
+			automation,
+			cause,
+			automation.targetHostId,
+			"dispatch_failed",
+			error,
+		);
+		return { status: "dispatch_failed", runId: inserted?.id ?? null, error };
+	}
 
 	const candidates = await resolveCandidateHosts(automation);
 	if (candidates.length === 0) {
 		const error = "no host available";
-		const inserted = await recordSkipped(automation, scheduledFor, null, error);
+		const inserted = await recordUndispatched(
+			automation,
+			cause,
+			null,
+			"skipped_offline",
+			error,
+		);
 		return { status: "skipped_offline", runId: inserted?.id ?? null, error };
 	}
 
 	const host = await pickOnlineHost(automation, relayUrl, candidates);
 	if (!host) {
 		const error = "target host offline";
-		const inserted = await recordSkipped(
+		const inserted = await recordUndispatched(
 			automation,
-			scheduledFor,
+			cause,
 			candidates[0]?.machineId ?? null,
+			"skipped_offline",
 			error,
 		);
 		return { status: "skipped_offline", runId: inserted?.id ?? null, error };
@@ -86,14 +122,11 @@ export async function dispatchAutomation(
 			automationId: automation.id,
 			organizationId: automation.organizationId,
 			title: automation.name,
-			scheduledFor,
+			...cause,
 			hostId: host.machineId,
 			status: "dispatching",
 		})
-		.onConflictDoNothing({
-			target: [automationRuns.automationId, automationRuns.scheduledFor],
-			where: sql`${automationRuns.scheduledFor} IS NOT NULL`,
-		})
+		.onConflictDoNothing(runDedupTarget(cause))
 		.returning();
 
 	if (!run) return { status: "conflict" };
@@ -132,6 +165,32 @@ export async function dispatchAutomation(
 			return created.workspaceId;
 		};
 
+		const event = cause.eventId
+			? ((await dbWs.query.automationEvents.findFirst({
+					where: eq(automationEvents.id, cause.eventId),
+					columns: {
+						provider: true,
+						eventType: true,
+						title: true,
+						url: true,
+						actorLogin: true,
+						ref: true,
+						repositoryId: true,
+						payload: true,
+						receivedAt: true,
+					},
+				})) ?? null)
+			: null;
+		const prompt = promptWithTriggerContext(
+			automation.prompt,
+			{
+				automationId: automation.id,
+				triggerId: cause.triggerId,
+				scheduledFor: cause.scheduledFor,
+			},
+			event,
+		);
+
 		const runAgent = (targetWorkspaceId: string) =>
 			runAgentOnHost({
 				relayUrl,
@@ -139,7 +198,7 @@ export async function dispatchAutomation(
 				jwt,
 				workspaceId: targetWorkspaceId,
 				agent: automation.agent,
-				prompt: automation.prompt,
+				prompt,
 			});
 
 		workspaceId = automation.v2WorkspaceId ?? (await createFreshWorkspace());
@@ -281,10 +340,53 @@ async function pickOnlineHost(
 	);
 }
 
-async function recordSkipped(
+/** The run row columns that identify the cause, in either shape. */
+type RunCause = {
+	scheduledFor: Date | null;
+	triggerId: string | null;
+	eventId: string | null;
+};
+
+function runCause(opts: DispatchCause): RunCause {
+	if (opts.trigger) {
+		return {
+			scheduledFor: null,
+			triggerId: opts.trigger.triggerId,
+			eventId: opts.trigger.eventId,
+		};
+	}
+	return {
+		scheduledFor: opts.scheduledFor,
+		triggerId: opts.triggerId ?? null,
+		eventId: null,
+	};
+}
+
+/**
+ * The partial unique index a run of this shape can collide on:
+ * automation_runs_schedule_dedup_idx for scheduled runs,
+ * automation_runs_event_dedup_idx for event runs. Postgres only matches
+ * ON CONFLICT against an index whose predicate the target clause repeats,
+ * so the two shapes need different targets, not one that names both.
+ */
+function runDedupTarget(cause: RunCause) {
+	return cause.eventId !== null
+		? {
+				target: [automationRuns.triggerId, automationRuns.eventId],
+				where: sql`${automationRuns.eventId} IS NOT NULL`,
+			}
+		: {
+				target: [automationRuns.automationId, automationRuns.scheduledFor],
+				where: sql`${automationRuns.scheduledFor} IS NOT NULL`,
+			};
+}
+
+/** Records a run that never reached a host, so the failure is visible. */
+async function recordUndispatched(
 	automation: DispatchableAutomation,
-	scheduledFor: Date,
+	cause: RunCause,
 	hostId: string | null,
+	status: "skipped_offline" | "dispatch_failed",
 	error: string,
 ): Promise<{ id: string } | undefined> {
 	const [row] = await dbWs
@@ -293,15 +395,12 @@ async function recordSkipped(
 			automationId: automation.id,
 			organizationId: automation.organizationId,
 			title: automation.name,
-			scheduledFor,
+			...cause,
 			hostId,
-			status: "skipped_offline",
+			status,
 			error,
 		})
-		.onConflictDoNothing({
-			target: [automationRuns.automationId, automationRuns.scheduledFor],
-			where: sql`${automationRuns.scheduledFor} IS NOT NULL`,
-		})
+		.onConflictDoNothing(runDedupTarget(cause))
 		.returning({ id: automationRuns.id });
 	return row;
 }

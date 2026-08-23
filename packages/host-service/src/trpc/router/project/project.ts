@@ -23,7 +23,7 @@ import {
 import { createUserSimpleGit } from "../../../runtime/git/simple-git";
 import { disposeSessionsByWorkspaceId } from "../../../terminal/terminal";
 import { deleteLocalWorkspace } from "../../../workspaces/local-workspace-store";
-import { protectedProcedure, router } from "../../index";
+import { machineOnlyProcedure, protectedProcedure, router } from "../../index";
 import {
 	normalizeSparseCheckoutPaths,
 	parseSparseCheckoutPaths,
@@ -505,7 +505,7 @@ export const projectRouter = router({
 			return { candidates, cloudErrors };
 		}),
 
-	create: protectedProcedure
+	create: machineOnlyProcedure
 		.input(
 			z.object({
 				name: z.string().min(1),
@@ -568,7 +568,7 @@ export const projectRouter = router({
 			}
 		}),
 
-	setup: protectedProcedure
+	setup: machineOnlyProcedure
 		.input(
 			z.object({
 				projectId: z.string().uuid(),
@@ -780,7 +780,7 @@ export const projectRouter = router({
 	 * not a side-effect of project removal. Returns repoPath so a future
 	 * UI can offer an explicit "delete files too" follow-up.
 	 */
-	remove: protectedProcedure
+	remove: machineOnlyProcedure
 		.input(z.object({ projectId: z.string().uuid() }))
 		.mutation(async ({ ctx, input }) => {
 			const localProject = ctx.db.query.projects
