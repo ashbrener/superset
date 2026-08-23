@@ -92,17 +92,6 @@ function seedProject(
 				lastEventType: "started",
 			})
 			.run();
-		db.insert(schema.acpSessions)
-			.values({
-				sessionId: `acp-${workspaceId}`,
-				workspaceId,
-				acpSessionId: `adapter-${workspaceId}`,
-				harness: "claude-agent-acp",
-				cwd: `/worktrees/${workspaceId}`,
-				createdAt: 1,
-				updatedAt: 1,
-			})
-			.run();
 	}
 	db.insert(schema.pullRequests)
 		.values({
@@ -162,13 +151,6 @@ describe("projectRouter.detach", () => {
 			db
 				.select()
 				.from(schema.terminalAgentBindings)
-				.all()
-				.map((r) => r.workspaceId),
-		).toEqual([OTHER_WORKSPACE_ID]);
-		expect(
-			db
-				.select()
-				.from(schema.acpSessions)
 				.all()
 				.map((r) => r.workspaceId),
 		).toEqual([OTHER_WORKSPACE_ID]);
