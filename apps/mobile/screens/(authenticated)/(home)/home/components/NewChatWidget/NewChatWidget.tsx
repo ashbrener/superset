@@ -2,18 +2,19 @@ import { Composer, type ComposerHandle } from "@superset/composer";
 import { useQuery } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
-import {
-	type PromptInputMessage,
-	usePromptInputAttachments,
-} from "@/components/ai-elements/prompt-input";
+import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import type { HostWorkspaceItem } from "@/hooks/useHostWorkspaces";
 import { useSession } from "@/lib/auth/client";
 import { getHostServiceClientByUrl } from "@/lib/host-service/client";
 import { apiClient } from "@/lib/trpc/client";
 import { useAttachmentsSheet } from "@/screens/(authenticated)/hooks/useAttachmentsSheet";
+import { useComposerDraft } from "@/screens/(authenticated)/hooks/useComposerDraft";
 import { useCreateTerminalWorkspace } from "@/screens/(authenticated)/hooks/useCreateTerminalWorkspace";
+import { useHostAgentConfigs } from "@/screens/(authenticated)/hooks/useHostAgentConfigs";
+import { usePasteAttachments } from "@/screens/(authenticated)/hooks/usePasteAttachments";
+import { HOME_DRAFT_KEY } from "@/screens/(authenticated)/stores/composerDraftsStore";
 import {
 	type ChatTarget,
 	useChatTargetStore,
@@ -43,8 +44,13 @@ export function NewChatWidget({
 	// Whether the composer was open when a sheet took first responder, so it is
 	// restored only when it actually was.
 	const wasExpanded = useRef(false);
-	const attachments = usePromptInputAttachments();
-	const openAttachmentsSheet = useAttachmentsSheet();
+	const draft = useComposerDraft(HOME_DRAFT_KEY);
+	const openAttachmentsSheet = useAttachmentsSheet(HOME_DRAFT_KEY);
+	const addPasted = usePasteAttachments(HOME_DRAFT_KEY);
+
+	// What was typed here last time, pinned at mount: a starting value handed to
+	// the composer as it is set up, never a binding.
+	const [initialDraft] = useState(() => draft.readText());
 
 	const agentId = useNewSessionPreferencesStore((state) => state.agentId);
 	const targetKey = useNewSessionPreferencesStore((state) => state.targetKey);
@@ -91,19 +97,12 @@ export function NewChatWidget({
 
 	const createTerminalWorkspace = useCreateTerminalWorkspace();
 	const createCloudWorkspace = useCreateCloudWorkspace();
-	const { data: agentConfigs } = useQuery({
-		queryKey: ["host-agent-configs", selectedTarget?.machineId ?? null],
+	const { data: agentConfigs } = useHostAgentConfigs({
+		machineId: selectedTarget?.machineId ?? null,
+		hostUrl: selectedTarget?.hostUrl ?? null,
 		// A cloud target has no host to list agents from, and create doesn't
 		// launch one (the prompt only feeds the auto-name).
-		enabled: selectedTarget !== null && !isCloudTarget,
-		staleTime: 60_000,
-		networkMode: "always" as const,
-		queryFn: async () => {
-			if (!selectedTarget) return [];
-			return getHostServiceClientByUrl(
-				selectedTarget.hostUrl,
-			).settings.agentConfigs.list.query();
-		},
+		enabled: !isCloudTarget,
 	});
 	const selectedAgent = agentConfigs?.find(
 		(config) => config.presetId === agentId,
@@ -127,6 +126,15 @@ export function NewChatWidget({
 		createCloudWorkspace.isPending ||
 		startWorkspaceTerminal.isPending;
 
+	// The draft and the tray are cleared together, on success only. The native
+	// composer's `clear()` reaches its own text and nothing else — the tray is
+	// React Native's — and the old React Native form used to clear both, so
+	// splitting them silently left attachments behind after every send.
+	const clearComposer = () => {
+		composerRef.current?.clear();
+		draft.clear();
+	};
+
 	const dismiss = () => {
 		clearChatTarget();
 		composerRef.current?.blur();
@@ -138,7 +146,7 @@ export function NewChatWidget({
 				.mutateAsync({ target: chatTarget, message, agentId })
 				.then(() => {
 					clearChatTarget();
-					composerRef.current?.clear();
+					clearComposer();
 				})
 				.catch(() => {});
 			return;
@@ -156,7 +164,7 @@ export function NewChatWidget({
 				})
 				.then(() => {
 					setBaseBranch(null);
-					composerRef.current?.clear();
+					clearComposer();
 				})
 				.catch(() => {});
 			return;
@@ -172,7 +180,7 @@ export function NewChatWidget({
 			})
 			.then(() => {
 				setBaseBranch(null);
-				composerRef.current?.clear();
+				clearComposer();
 			})
 			.catch(() => {});
 	};
@@ -227,9 +235,10 @@ export function NewChatWidget({
 		<Composer
 			ref={composerRef}
 			placeholder={placeholder ?? "Plan, ask, build..."}
+			initialDraft={initialDraft}
 			isSending={isSending}
 			onDictationError={(message: string) => Alert.alert(message)}
-			attachments={attachments.attachments.map((item) => ({
+			attachments={draft.attachments.map((item) => ({
 				id: item.id,
 				uri: item.uri ?? "",
 				kind: item.type === "image" ? ("image" as const) : ("file" as const),
@@ -237,13 +246,13 @@ export function NewChatWidget({
 			}))}
 			headerChips={headerChips}
 			selectedModel={selectedModel}
-			onSubmit={(text) =>
-				submit({ text, attachments: attachments.attachments })
-			}
-			onRemoveAttachment={(id) => attachments.remove(id)}
+			onSubmit={(text) => submit({ text, attachments: draft.attachments })}
+			onDraftChange={draft.setText}
+			onRemoveAttachment={(id) => draft.remove(id)}
 			onExpandedChange={(expanded) => {
 				wasExpanded.current = expanded;
 			}}
+			onPaste={addPasted}
 			onAttachmentsPress={() => {
 				void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 				const restore = wasExpanded.current;
