@@ -56,14 +56,32 @@ Object.defineProperty(globalThis, "window", {
 });
 
 // Now safe to import — the module-level singleton will find window/localStorage
-const { createPersistentHashHistory, resolveStorageKey } = await import(
+// Writes now go to the main process over tRPC, not localStorage. Mocked before
+// the dynamic import below so the module-level singleton picks up the stub.
+const persistCalls: { entries: string[]; index: number }[] = [];
+mock.module("renderer/lib/trpc-client", () => ({
+	electronTrpcClient: {
+		uiState: {
+			routerHistory: {
+				set: {
+					mutate: (input: { entries: string[]; index: number }) => {
+						persistCalls.push(input);
+						return Promise.resolve({ success: true });
+					},
+				},
+			},
+		},
+	},
+}));
+
+const { createPersistentHashHistory } = await import(
 	"./persistent-hash-history"
 );
-const { LEGACY_WINDOW_KEY } = await import("shared/window-identity");
 
 beforeEach(() => {
 	storage.clear();
 	mockReplaceState.mockClear();
+	persistCalls.length = 0;
 });
 
 afterEach(() => {
@@ -215,15 +233,15 @@ describe("createPersistentHashHistory", () => {
 		});
 	});
 
-	describe("localStorage persistence", () => {
+	describe("persistence", () => {
 		it("persists entries on push", () => {
 			const history = createPersistentHashHistory();
 			history.push("/tasks");
 			history.push("/workspace/abc");
 
-			const stored = JSON.parse(storage.get("router-history") ?? "{}");
-			expect(stored.entries).toEqual(["/", "/tasks", "/workspace/abc"]);
-			expect(stored.index).toBe(2);
+			const stored = persistCalls.at(-1);
+			expect(stored?.entries).toEqual(["/", "/tasks", "/workspace/abc"]);
+			expect(stored?.index).toBe(2);
 		});
 
 		it("restores from localStorage on new instance", () => {
@@ -262,16 +280,16 @@ describe("createPersistentHashHistory", () => {
 				history.push(`/page/${i}`);
 			}
 
-			const stored = JSON.parse(storage.get("router-history") ?? "{}");
-			expect(stored.entries.length).toBe(100);
-			expect(stored.entries[0]).toBe("/page/11");
-			expect(stored.entries[99]).toBe("/page/110");
+			const stored = persistCalls.at(-1);
+			expect(stored?.entries.length).toBe(100);
+			expect(stored?.entries[0]).toBe("/page/11");
+			expect(stored?.entries[99]).toBe("/page/110");
 		});
 
 		it("stores non-negative cappedIndex when current position is in the dropped portion", () => {
 			// Build 111 entries (index 0="/", 1-110="/page/N"), then navigate
 			// back to index 5. At this point entries.length=111 and index=5.
-			// persistState caps to 100 entries, computing:
+			// capEntries caps to 100 entries, computing:
 			//   cappedIndex = 5 - (111 - 100) = -6
 			// Without the Math.max(0, ...) fix this would store a negative index.
 			const history = createPersistentHashHistory();
@@ -281,10 +299,10 @@ describe("createPersistentHashHistory", () => {
 			// Navigate back to index 5 — go() calls persistState internally
 			history.go(-105);
 
-			// Check localStorage immediately after go(), before any push that
-			// would truncate entries and sidestep the overflow path.
-			const stored = JSON.parse(storage.get("router-history") ?? "{}");
-			expect(stored.index).toBeGreaterThanOrEqual(0);
+			// Check the write immediately after go(), before any push that would
+			// truncate entries and sidestep the overflow path.
+			const stored = persistCalls.at(-1);
+			expect(stored?.index).toBeGreaterThanOrEqual(0);
 		});
 	});
 
@@ -378,86 +396,6 @@ describe("createPersistentHashHistory", () => {
 
 			history.back();
 			expect(mockReplaceState).toHaveBeenCalledWith(null, "", "#/");
-		});
-	});
-	describe("resolveStorageKey", () => {
-		/** A storage double independent of the module-level singleton's. */
-		function makeStorage(initial: Record<string, string> = {}) {
-			const map = new Map(Object.entries(initial));
-			return {
-				map,
-				getItem: (key: string) => map.get(key) ?? null,
-				setItem: (key: string, value: string) => {
-					map.set(key, value);
-				},
-				removeItem: (key: string) => {
-					map.delete(key);
-				},
-			};
-		}
-
-		it("scopes the key to the window", () => {
-			const storage = makeStorage();
-			expect(resolveStorageKey("window-a", storage)).toBe(
-				"router-history:window-a",
-			);
-		});
-
-		it("falls back to the bare key when there is no window key", () => {
-			const storage = makeStorage();
-			expect(resolveStorageKey(undefined, storage)).toBe("router-history");
-			expect(resolveStorageKey("", storage)).toBe("router-history");
-		});
-
-		it("hands the pre-multi-window record to the legacy window", () => {
-			const storage = makeStorage({ "router-history": "legacy-route" });
-
-			const key = resolveStorageKey(LEGACY_WINDOW_KEY, storage);
-
-			expect(key).toBe(`router-history:${LEGACY_WINDOW_KEY}`);
-			expect(storage.map.get(key)).toBe("legacy-route");
-			// Moved, not copied: leaving it behind would strand a key that nothing
-			// reads and the sweep deliberately never collects.
-			expect(storage.map.has("router-history")).toBe(false);
-		});
-
-		it("never lets an ordinary window claim the legacy record", () => {
-			const storage = makeStorage({ "router-history": "legacy-route" });
-
-			const key = resolveStorageKey("window-b", storage);
-
-			expect(key).toBe("router-history:window-b");
-			expect(storage.map.get(key)).toBeUndefined();
-			// Still there for the legacy window to claim whenever it opens.
-			expect(storage.map.get("router-history")).toBe("legacy-route");
-		});
-
-		it("does not overwrite a legacy window that already has its own history", () => {
-			const storage = makeStorage({
-				"router-history": "stale-legacy-route",
-				[`router-history:${LEGACY_WINDOW_KEY}`]: "current-route",
-			});
-
-			const key = resolveStorageKey(LEGACY_WINDOW_KEY, storage);
-
-			expect(storage.map.get(key)).toBe("current-route");
-		});
-
-		it("is a one-time handoff", () => {
-			const storage = makeStorage({ "router-history": "legacy-route" });
-			const key = resolveStorageKey(LEGACY_WINDOW_KEY, storage);
-			storage.setItem(key, "navigated-since");
-
-			// A second launch must not resurrect the old route over the new one.
-			expect(resolveStorageKey(LEGACY_WINDOW_KEY, storage)).toBe(key);
-			expect(storage.map.get(key)).toBe("navigated-since");
-		});
-
-		it("tolerates a profile with no legacy record at all", () => {
-			const storage = makeStorage();
-			const key = resolveStorageKey(LEGACY_WINDOW_KEY, storage);
-			expect(key).toBe(`router-history:${LEGACY_WINDOW_KEY}`);
-			expect(storage.map.size).toBe(0);
 		});
 	});
 });

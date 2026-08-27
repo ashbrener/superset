@@ -13,3 +13,20 @@
  * decision it has to make synchronously, before React mounts.
  */
 export const LEGACY_WINDOW_KEY = "legacy-single-window";
+
+/**
+ * How many routes a window's history keeps. Older entries fall off the front.
+ */
+export const MAX_ROUTER_HISTORY_ENTRIES = 100;
+
+/**
+ * Budget for the serialized history handed to a new renderer on its command
+ * line. Windows caps a whole command line at 32767 characters, and this is one
+ * of several arguments, so the payload is trimmed from the oldest entry until
+ * it fits rather than trusting the entry count alone — a history of long paths
+ * can be large while well under `MAX_ROUTER_HISTORY_ENTRIES`.
+ */
+export const MAX_ROUTER_HISTORY_ARGV_BYTES = 8192;
+
+export const WINDOW_KEY_ARG = "--superset-window-key=";
+export const ROUTER_HISTORY_ARG = "--superset-router-history=";

@@ -4,6 +4,7 @@ import type { TabsState, ThemeState } from "main/lib/app-state/schemas";
 import { defaultAppState } from "main/lib/app-state/schemas";
 import { getKey } from "main/lib/window-registry/window-registry";
 import { LEGACY_WINDOW_KEY } from "main/lib/window-state";
+import { MAX_ROUTER_HISTORY_ENTRIES } from "shared/window-identity";
 import { z } from "zod";
 import { publicProcedure, router } from "../..";
 
@@ -253,6 +254,15 @@ const themeStateSchema = z.object({
 /**
  * UI State router - manages tabs and theme persistence via lowdb
  */
+/**
+ * Capped in the renderer before it is sent; the cap is enforced again here so a
+ * misbehaving renderer cannot grow app-state.json without bound.
+ */
+const routerHistorySchema = z.object({
+	entries: z.array(z.string()).min(1).max(MAX_ROUTER_HISTORY_ENTRIES),
+	index: z.number().int().min(0),
+});
+
 export const createUiStateRouter = () => {
 	return router({
 		// Tabs state procedures — scoped to the calling window. Each window is
@@ -293,6 +303,28 @@ export const createUiStateRouter = () => {
 						// the shared record rather than dropping the write.
 						appState.data.tabsState = input;
 					}
+					await writeAppState();
+					return { success: true };
+				}),
+		}),
+
+		// Router history, scoped to the calling window exactly like `tabs`. The
+		// read side is deliberately absent: the renderer needs its history before
+		// React mounts, so the main process hands it over at window creation
+		// (see `additionalArguments` in main/windows/main.ts) rather than the
+		// renderer asking for it over async IPC.
+		routerHistory: router({
+			set: publicProcedure
+				.input(routerHistorySchema)
+				.mutation(async ({ ctx, input }) => {
+					const key = ctx.senderWindow ? getKey(ctx.senderWindow.id) : null;
+					// No resolvable window means no window to restore it for, so
+					// there is nothing useful to write.
+					if (!key) return { success: false };
+					appState.data.routerHistoryByWindow = {
+						...appState.data.routerHistoryByWindow,
+						[key]: input,
+					};
 					await writeAppState();
 					return { success: true };
 				}),

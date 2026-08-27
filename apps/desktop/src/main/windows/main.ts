@@ -15,6 +15,7 @@ import { isExpectedRendererExit } from "main/lib/renderer-exit";
 import { NOTIFICATION_EVENTS, PLATFORM } from "shared/constants";
 import { env } from "shared/env.shared";
 import type { AgentLifecycleEvent } from "shared/notification-types";
+import { WINDOW_KEY_ARG } from "shared/window-identity";
 import { createIPCHandler } from "trpc-electron/main";
 import { productName } from "~/package.json";
 import {
@@ -57,6 +58,7 @@ import {
 	type WindowState,
 } from "../lib/window-state";
 import { getWorkspaceRuntimeRegistry } from "../lib/workspace-runtime";
+import { buildRouterHistoryArg } from "./routerHistoryArg";
 
 // Singleton IPC handler — created once, shared by every window. Each window is
 // attached/detached individually via attachWindow/detachWindow.
@@ -368,6 +370,12 @@ export async function createPlatformWindow({
 	// webPreferences below, which is built before the window exists.
 	const windowKey = key ?? randomUUID();
 
+	// Read once, here, for the same reason the key is: webPreferences below is
+	// built before the window exists.
+	const routerHistoryArg = buildRouterHistoryArg(
+		appState.data.routerHistoryByWindow?.[windowKey],
+	);
+
 	// Explicit bounds (restore) win. The first window falls back to the saved
 	// single-window position; an *additional* New Window opens fresh/centered so
 	// it doesn't land exactly on top of an existing window.
@@ -407,11 +415,14 @@ export async function createPlatformWindow({
 		webPreferences: {
 			preload: join(__dirname, "../preload/index.js"),
 			webviewTag: true,
-			// The renderer needs its window's persisted identity synchronously, at
-			// module-evaluation time: the router's history is restored from
-			// localStorage before React mounts, so it cannot wait on IPC. Passed as
-			// a process argument and re-exposed by the preload.
-			additionalArguments: [`--superset-window-key=${windowKey}`],
+			// The renderer needs its window's identity and its saved route
+			// synchronously, at module-evaluation time: the router is built from
+			// the history before React mounts, so neither can wait on IPC. Both
+			// are passed as process arguments and re-exposed by the preload.
+			additionalArguments: [
+				`${WINDOW_KEY_ARG}${windowKey}`,
+				...(routerHistoryArg ? [routerHistoryArg] : []),
+			],
 			// Chromium's built-in PDF viewer, used by the file pane's PDF view
 			plugins: true,
 			// Isolate Electron session from system browser cookies

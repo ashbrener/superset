@@ -15,7 +15,6 @@ import {
 import { sweepDeadPersistedKeys } from "./lib/persisted-keys";
 import {
 	persistentHistory,
-	sweepDeadWindowHistories,
 } from "./lib/persistent-hash-history";
 import { posthog } from "./lib/posthog";
 import { pruneExpiredTerminalState } from "./lib/terminal/terminal-buffer-gc";
@@ -36,7 +35,6 @@ pruneExpiredTerminalState();
 sweepDeadPersistedKeys();
 // Router history is per window now, and closed windows leave theirs behind.
 // Deliberately not awaited: it needs the main process, and boot must not wait.
-void sweepDeadWindowHistories();
 
 const router = createRouter({
 	routeTree,

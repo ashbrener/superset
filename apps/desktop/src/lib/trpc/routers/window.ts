@@ -3,7 +3,6 @@ import { homedir } from "node:os";
 import { dialog } from "electron";
 import { menuEmitter } from "main/lib/menu-events";
 import {
-	getAllKeys,
 	getOrg,
 	setOrg,
 } from "main/lib/window-registry/window-registry";
@@ -59,7 +58,6 @@ export const createWindowRouter = () => {
 		 * to clean it up — this is what lets a window sweep entries belonging to
 		 * windows that no longer exist.
 		 */
-		liveKeys: publicProcedure.query(() => getAllKeys()),
 
 		/** The organization this window currently shows (per-window). */
 		getActiveOrg: publicProcedure.query(({ ctx }) => {

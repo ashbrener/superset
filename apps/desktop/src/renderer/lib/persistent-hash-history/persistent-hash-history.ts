@@ -3,102 +3,13 @@ import {
 	type HistoryLocation,
 	type RouterHistory,
 } from "@tanstack/react-router";
-import { LEGACY_WINDOW_KEY } from "shared/window-identity";
-
-const STORAGE_KEY_BASE = "router-history";
-const MAX_ENTRIES = 100;
-
-/**
- * localStorage is shared by every window of the profile, so a single
- * "router-history" key meant all windows read and wrote one history: the last
- * window to navigate decided where *every* window reopened, and a restored
- * window routinely landed on another window's workspace — in another
- * organization. Scoping by the window's persisted key gives each window its own
- * history across relaunches.
- */
-export function resolveStorageKey(
-	windowKey: string | undefined,
-	storage: Pick<Storage, "getItem" | "setItem" | "removeItem">,
-): string {
-	// No key means a test harness or a renderer opened outside createWindow;
-	// the bare key is the only sensible target and nothing else will claim it.
-	if (!windowKey) return STORAGE_KEY_BASE;
-
-	const scoped = `${STORAGE_KEY_BASE}:${windowKey}`;
-
-	// Every production window is minted a key, so the bare record left by a
-	// pre-multi-window profile would otherwise never be read again and the user
-	// would silently lose their route on upgrade. Hand it to the one window that
-	// represents the old single window, exactly once, and take the bare key with
-	// it rather than stranding it on the profile forever.
-	if (windowKey === LEGACY_WINDOW_KEY && storage.getItem(scoped) === null) {
-		const inherited = storage.getItem(STORAGE_KEY_BASE);
-		if (inherited !== null) {
-			storage.setItem(scoped, inherited);
-			storage.removeItem(STORAGE_KEY_BASE);
-		}
-	}
-
-	return scoped;
-}
-
-const STORAGE_KEY = (() => {
-	try {
-		return resolveStorageKey(window.App?.windowKey, localStorage);
-	} catch {
-		return STORAGE_KEY_BASE;
-	}
-})();
+import { loadInitialHistory, persistHistory } from "./historyStore";
 
 type LocationState = HistoryLocation["state"];
-
-interface PersistedState {
-	entries: string[];
-	index: number;
-}
 
 export interface HistoryEntry {
 	path: string;
 	timestamp: number;
-}
-
-function loadPersistedState(): PersistedState {
-	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
-		if (raw) {
-			const parsed = JSON.parse(raw) as PersistedState;
-			if (
-				Array.isArray(parsed.entries) &&
-				parsed.entries.length > 0 &&
-				parsed.entries.every((e) => typeof e === "string" && e.length > 0) &&
-				typeof parsed.index === "number"
-			) {
-				const index = Math.min(
-					Math.max(parsed.index, 0),
-					parsed.entries.length - 1,
-				);
-				return { entries: parsed.entries, index };
-			}
-		}
-	} catch {}
-	return { entries: ["/"], index: 0 };
-}
-
-function persistState(entries: string[], index: number) {
-	try {
-		const capped =
-			entries.length > MAX_ENTRIES
-				? entries.slice(entries.length - MAX_ENTRIES)
-				: entries;
-		const cappedIndex =
-			entries.length > MAX_ENTRIES
-				? Math.max(0, index - (entries.length - MAX_ENTRIES))
-				: index;
-		localStorage.setItem(
-			STORAGE_KEY,
-			JSON.stringify({ entries: capped, index: cappedIndex }),
-		);
-	} catch {}
 }
 
 function syncHash(path: string) {
@@ -151,7 +62,7 @@ export interface PersistentHashHistory extends RouterHistory {
 }
 
 export function createPersistentHashHistory(): PersistentHashHistory {
-	const persisted = loadPersistedState();
+	const persisted = loadInitialHistory();
 
 	const entries: string[] = [...persisted.entries];
 	const timestamps: number[] = entries.map(() => Date.now());
@@ -183,29 +94,29 @@ export function createPersistentHashHistory(): PersistentHashHistory {
 			states.push(state as LocationState);
 			index = entries.length - 1;
 			syncHash(path);
-			persistState(entries, index);
+			void persistHistory(entries, index);
 		},
 		replaceState: (path, state) => {
 			entries[index] = path;
 			timestamps[index] = Date.now();
 			states[index] = state as LocationState;
 			syncHash(path);
-			persistState(entries, index);
+			void persistHistory(entries, index);
 		},
 		back: () => {
 			index = Math.max(index - 1, 0);
 			syncHash(entries[index] ?? "/");
-			persistState(entries, index);
+			void persistHistory(entries, index);
 		},
 		forward: () => {
 			index = Math.min(index + 1, entries.length - 1);
 			syncHash(entries[index] ?? "/");
-			persistState(entries, index);
+			void persistHistory(entries, index);
 		},
 		go: (n) => {
 			index = Math.min(Math.max(index + n, 0), entries.length - 1);
 			syncHash(entries[index] ?? "/");
-			persistState(entries, index);
+			void persistHistory(entries, index);
 		},
 		createHref: (path) =>
 			`${window.location.pathname}${window.location.search}#${path}`,
