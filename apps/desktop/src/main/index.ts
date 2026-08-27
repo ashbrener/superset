@@ -4,6 +4,7 @@ import {
 	setAgentSetupTemplatesDir,
 	setupAgentIntegrations,
 	writeSharedDisabledAgentIds,
+	writeSharedDisabledSkillIds,
 } from "@superset/agent-setup";
 import { settings } from "@superset/local-db";
 import { app, dialog, Notification, net, protocol, session } from "electron";
@@ -25,6 +26,7 @@ import { initAppState } from "./lib/app-state";
 import { requestAppleEventsAccess } from "./lib/apple-events-permission";
 import { isUpdateReadyToInstall, setupAutoUpdater } from "./lib/auto-updater";
 import { startBrowserBridge } from "./lib/browser/browser-bridge";
+import { downloadManager } from "./lib/browser/download-manager";
 import { installBundledCliShim } from "./lib/bundled-cli";
 import { resolveDevWorkspaceName } from "./lib/dev-workspace-name";
 import { setWorkspaceDockIcon } from "./lib/dock-icon";
@@ -32,6 +34,8 @@ import { loadWebviewBrowserExtension } from "./lib/extensions";
 import { getHostServiceCoordinator } from "./lib/host-service-coordinator";
 import { localDb } from "./lib/local-db";
 import { requestLocalNetworkAccess } from "./lib/local-network-permission";
+import { menuEmitter } from "./lib/menu-events";
+import { PAGE_SCHEME, pageProtocolHandler } from "./lib/pageContent";
 import {
 	initTanstackDbPersistence,
 	shutdownTanstackDbPersistence,
@@ -339,6 +343,13 @@ protocol.registerSchemesAsPrivileged([
 			supportFetchAPI: true,
 		},
 	},
+	{
+		scheme: PAGE_SCHEME,
+		privileges: {
+			standard: true,
+			secure: true,
+		},
+	},
 ]);
 
 const gotTheLock = app.requestSingleInstanceLock();
@@ -348,11 +359,32 @@ if (!gotTheLock) {
 } else {
 	// Windows/Linux: protocol URL arrives as argv on the second instance
 	app.on("second-instance", async (_event, argv) => {
-		focusMainWindow();
+		// An auto-update restart spawns the replacement while this process
+		// still holds the single-instance lock; don't build windows mid-quit.
+		if (isQuitting) return;
 		const url = findDeepLinkInArgv(argv);
 		if (url) {
+			// processDeepLink focuses the window on every one of its paths.
 			await processDeepLink(url);
+			return;
 		}
+		// The desktop entry's "New Window" action (GNOME top-bar/dock app
+		// menus) relaunches the executable with --new-window, and the
+		// single-instance lock lands it here. A plain relaunch keeps the
+		// Electron-standard behavior of focusing the running app, so a
+		// Start-menu or launcher re-click never stacks extra windows. The
+		// listener-count check covers the boot window before initAppServices
+		// registers the handler; falling back to focus matches pre-ready
+		// behavior instead of dropping the event silently.
+		if (
+			argv.includes("--new-window") &&
+			menuEmitter.listenerCount("new-window") > 0
+		) {
+			console.log("[main] Second instance requested a new window");
+			menuEmitter.emit("new-window");
+			return;
+		}
+		focusMainWindow();
 	});
 
 	(async () => {
@@ -375,6 +407,11 @@ if (!gotTheLock) {
 		session
 			.fromPartition("persist:superset")
 			.protocol.handle("superset-icon", iconProtocolHandler);
+
+		protocol.handle(PAGE_SCHEME, pageProtocolHandler);
+		session
+			.fromPartition("persist:superset")
+			.protocol.handle(PAGE_SCHEME, pageProtocolHandler);
 
 		// Serve system fonts (e.g. SF Mono on macOS) via custom protocol
 		// so the renderer can use @font-face with font-src 'self' CSP
@@ -428,6 +465,7 @@ if (!gotTheLock) {
 		} catch (error) {
 			console.error("[main] Failed to start browser bridge:", error);
 		}
+		downloadManager.start();
 
 		const hostServiceCoordinator = getHostServiceCoordinator();
 		hostServiceCoordinator.setConfigProvider(async () => {
@@ -480,12 +518,17 @@ if (!gotTheLock) {
 			// The vite build copies @superset/agent-setup's templates (plus the
 			// bundled Claude plugin) next to this bundle; see vite/helpers.ts.
 			setAgentSetupTemplatesDir(path.join(__dirname, "templates"));
-			const disabledAgentHooks =
-				localDb.select().from(settings).get()?.disabledAgentHooks ?? [];
-			// Mirror the disable list so CLI-launched host-services on this
-			// machine honor it instead of re-provisioning disabled agents.
+			const settingsRow = localDb.select().from(settings).get();
+			const disabledAgentHooks = settingsRow?.disabledAgentHooks ?? [];
+			const disabledSkills = settingsRow?.disabledSkills ?? [];
+			// Mirror the disable lists so CLI-launched host-services on this
+			// machine honor them instead of re-provisioning disabled agents/skills.
 			writeSharedDisabledAgentIds(disabledAgentHooks);
-			setupAgentIntegrations({ disabledAgentIds: disabledAgentHooks });
+			writeSharedDisabledSkillIds(disabledSkills);
+			setupAgentIntegrations({
+				disabledAgentIds: disabledAgentHooks,
+				disabledSkillIds: disabledSkills,
+			});
 		} catch (error) {
 			console.error("[main] Failed to set up agent integrations:", error);
 		}
