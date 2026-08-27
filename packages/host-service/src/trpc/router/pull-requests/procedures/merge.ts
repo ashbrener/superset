@@ -1,12 +1,13 @@
 import { z } from "zod";
 import { protectedProcedure } from "../../../index";
-import { mergeRejectionError } from "../../github/github";
+import { actionRejectionError } from "../../github/github";
 import { resolveGithubRepo } from "../../workspace-creation/shared/project-helpers";
 
 const mergeInputSchema = z.object({
 	projectId: z.string(),
 	prNumber: z.number().int().positive(),
 	mergeMethod: z.enum(["merge", "squash", "rebase"]).default("merge"),
+	commitMessage: z.string().trim().min(1).optional(),
 });
 
 /**
@@ -25,9 +26,10 @@ export const mergePR = protectedProcedure
 				repo: repo.name,
 				pull_number: input.prNumber,
 				merge_method: input.mergeMethod,
+				...(input.commitMessage ? { commit_message: input.commitMessage } : {}),
 			});
 			return data;
 		} catch (error) {
-			throw mergeRejectionError(error);
+			throw actionRejectionError(error, "GitHub refused the merge.");
 		}
 	});

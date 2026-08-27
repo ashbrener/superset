@@ -181,7 +181,7 @@ export const SETTINGS: SettingDefinition[] = [
 		key: "showPresetsBar",
 		type: "boolean",
 		section: "terminal",
-		description: "Show the terminal presets bar",
+		description: "Show the terminal scripts bar",
 		defaultValue: true,
 	},
 	{
@@ -195,7 +195,7 @@ export const SETTINGS: SettingDefinition[] = [
 		key: "autoApplyDefaultPreset",
 		type: "boolean",
 		section: "terminal",
-		description: "Apply the default terminal preset to new workspaces",
+		description: "Apply the default terminal script to new workspaces",
 		defaultValue: true,
 	},
 	{
@@ -340,6 +340,7 @@ export const EXCLUDED_SETTINGS_COLUMNS: Record<string, string> = {
 	agentCustomDefinitions: "structured JSON; use superset agents",
 	agentPresetPermissionsMigratedAt: "internal migration marker",
 	disabledAgentHooks: "agent-id list; use the app UI",
+	disabledSkills: "skill-name list; use the app's Plugins page",
 	installedPlugins: "structured install records; use the app's Plugins page",
 	terminalPersistence: "dead column; nothing reads it, retained for rollback",
 	deleteLocalBranch: "v2 reads renderer localStorage, unreachable externally",
