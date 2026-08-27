@@ -398,16 +398,17 @@ export function DashboardSidebar({
 											<DashboardSidebarSessionsSection
 												sessionWorkspaces={sessionWorkspaces}
 												isCollapsed={isCollapsed}
-												rowsHidden={!isCollapsed && workspacesListCollapsed}
 												workspaceShortcutLabels={workspaceShortcutLabels}
 												onWorkspaceHover={refreshWorkspacePullRequest}
 											/>
 											{!isCollapsed && (
-												<DashboardSidebarBulkActions projects={orderedGroups}>
-													<DashboardSidebarWorkspacesHeader
-														onNewFolder={handleNewFolder}
-													/>
-												</DashboardSidebarBulkActions>
+												<div className="mt-3 first:mt-0">
+													<DashboardSidebarBulkActions projects={orderedGroups}>
+														<DashboardSidebarWorkspacesHeader
+															onNewFolder={handleNewFolder}
+														/>
+													</DashboardSidebarBulkActions>
+												</div>
 											)}
 											{(isCollapsed || !workspacesListCollapsed) && (
 												<SortableContext

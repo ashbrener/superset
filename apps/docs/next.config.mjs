@@ -54,6 +54,17 @@ const config = {
 				destination: "/first-workspace",
 				permanent: true,
 			},
+			{
+				source: "/terminal-presets",
+				destination: "/terminal-scripts",
+				permanent: true,
+			},
+			// Remote Workspaces was renamed to Remote Access.
+			{
+				source: "/remote-workspaces",
+				destination: "/remote-access",
+				permanent: true,
+			},
 		];
 	},
 	async headers() {
