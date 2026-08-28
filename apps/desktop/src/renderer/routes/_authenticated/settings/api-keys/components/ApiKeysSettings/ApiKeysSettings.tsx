@@ -1,3 +1,5 @@
+import { errorMessage } from "@superset/i18n/errors";
+import { formatDate as formatLocaleDate } from "@superset/i18n/format";
 import { COMPANY } from "@superset/shared/constants";
 import { alert } from "@superset/ui/atoms/Alert";
 import { Button } from "@superset/ui/button";
@@ -74,9 +76,7 @@ export function ApiKeysSettings({ visibleItems }: ApiKeysSettingsProps) {
 			await utils.apiKey.list.invalidate();
 		} catch (error) {
 			console.error("[api-keys] Failed to generate API key:", error);
-			toast.error(
-				error instanceof Error ? error.message : "Failed to generate API key",
-			);
+			toast.error(errorMessage(error, "Failed to generate API key"));
 		} finally {
 			setIsGenerating(false);
 		}
@@ -126,7 +126,7 @@ export function ApiKeysSettings({ visibleItems }: ApiKeysSettingsProps) {
 	const formatDate = (date: Date | string | null) => {
 		if (!date) return "Never";
 		const d = date instanceof Date ? date : new Date(date);
-		return d.toLocaleDateString("en-US", {
+		return formatLocaleDate(d, {
 			month: "short",
 			day: "numeric",
 			year: "numeric",
