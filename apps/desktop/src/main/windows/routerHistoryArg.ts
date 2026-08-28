@@ -28,9 +28,17 @@ export function buildRouterHistoryArg(
 		if (Buffer.byteLength(encoded, "utf8") <= MAX_ROUTER_HISTORY_ARGV_BYTES) {
 			return `${ROUTER_HISTORY_ARG}${encodeURIComponent(encoded)}`;
 		}
-		// Drop from the front so the current entry is the last thing lost.
-		entries = entries.slice(1);
-		index = Math.max(index - 1, 0);
+		// Give up the end furthest from where the window actually is, so the
+		// entry it will restore to is the last thing lost. Trimming the front
+		// unconditionally would discard the active entry outright whenever the
+		// window sits at index 0 with forward history — it would come back on
+		// somebody else's route rather than its own.
+		if (index > 0) {
+			entries = entries.slice(1);
+			index -= 1;
+		} else {
+			entries = entries.slice(0, -1);
+		}
 	}
 
 	return null;

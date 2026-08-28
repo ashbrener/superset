@@ -49,6 +49,38 @@ describe("buildRouterHistoryArg", () => {
 		expect(decoded.entries[decoded.index]).toBe(entries[99]);
 	});
 
+	it("keeps the active entry when the window sits at the oldest one", () => {
+		// Regression: trimming the front unconditionally dropped the entry the
+		// window was actually on whenever index was 0, so it restored onto a
+		// forward entry instead of its own route.
+		const entries = Array.from(
+			{ length: 100 },
+			(_, i) => `/${"p".repeat(200)}/${i}`,
+		);
+
+		const decoded = decode(
+			buildRouterHistoryArg({ entries, index: 0 }) as string,
+		);
+
+		expect(decoded.entries[decoded.index]).toBe(entries[0]);
+		expect(
+			Buffer.byteLength(JSON.stringify(decoded), "utf8"),
+		).toBeLessThanOrEqual(MAX_ROUTER_HISTORY_ARGV_BYTES);
+	});
+
+	it("keeps the active entry from the middle of an oversized history", () => {
+		const entries = Array.from(
+			{ length: 100 },
+			(_, i) => `/${"p".repeat(200)}/${i}`,
+		);
+
+		const decoded = decode(
+			buildRouterHistoryArg({ entries, index: 50 }) as string,
+		);
+
+		expect(decoded.entries[decoded.index]).toBe(entries[50]);
+	});
+
 	it("clamps an out-of-range stored index", () => {
 		expect(
 			decode(buildRouterHistoryArg({ entries: ["/"], index: 7 }) as string),

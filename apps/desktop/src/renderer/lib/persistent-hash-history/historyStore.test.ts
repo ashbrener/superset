@@ -34,6 +34,10 @@ describe("parseHandoff", () => {
 		expect(parseHandoff(encode({ entries: "nope", index: 0 }))).toBeNull();
 		expect(parseHandoff(encode({ entries: [], index: 0 }))).toBeNull();
 		expect(parseHandoff(encode({ entries: ["/"], index: "x" }))).toBeNull();
+		// `entries[0.5]` is undefined — the router would start on no route.
+		expect(
+			parseHandoff(encode({ entries: ["/", "/a"], index: 0.5 })),
+		).toBeNull();
 	});
 
 	it("clamps an index that points past the end", () => {

@@ -22,7 +22,10 @@ function isValid(value: unknown): value is PersistedHistory {
 		Array.isArray(entries) &&
 		entries.length > 0 &&
 		entries.every((entry) => typeof entry === "string" && entry.length > 0) &&
-		typeof index === "number"
+		// Integer, not just a number: `entries[0.5]` is undefined, which would
+		// start the router on no route at all. Reachable from a hand-edited
+		// profile via the migration path.
+		Number.isInteger(index)
 	);
 }
 
