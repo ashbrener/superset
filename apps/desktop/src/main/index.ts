@@ -6,6 +6,7 @@ import {
 	writeSharedDisabledAgentIds,
 	writeSharedDisabledSkillIds,
 } from "@superset/agent-setup";
+import { initI18n, resolveLocale } from "@superset/i18n";
 import { settings } from "@superset/local-db";
 import { app, dialog, Notification, net, protocol, session } from "electron";
 import { makeAppSetup } from "lib/electron-app/factories/app/setup";
@@ -210,6 +211,15 @@ export function exitImmediately(): void {
 	app.exit(0);
 }
 
+function getLanguageSetting(): string | null {
+	try {
+		const row = localDb.select().from(settings).get();
+		return row?.language ?? null;
+	} catch {
+		return null;
+	}
+}
+
 function getConfirmOnQuitSetting(): boolean {
 	try {
 		const row = localDb.select().from(settings).get();
@@ -389,6 +399,14 @@ if (!gotTheLock) {
 
 	(async () => {
 		await app.whenReady();
+		// Persisted language setting wins; otherwise infer from OS preferences
+		// (plans/20260826-i18n-strategy.md).
+		initI18n(
+			resolveLocale([
+				...(getLanguageSetting() ? [getLanguageSetting() as string] : []),
+				...app.getPreferredSystemLanguages(),
+			]),
+		);
 		registerWithMacOSNotificationCenter();
 		requestAppleEventsAccess();
 		requestLocalNetworkAccess();
