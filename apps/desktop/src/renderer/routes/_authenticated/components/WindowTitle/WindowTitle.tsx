@@ -26,7 +26,11 @@ export function WindowTitle() {
 	)?.name;
 
 	const matchRoute = useMatchRoute();
-	const match = matchRoute({ to: "/v2-workspace/$workspaceId" });
+	// Fuzzy: the window is "on" a workspace for anything nested under it, not
+	// only the index route. Today that route has no children beyond the index,
+	// so this changes nothing yet — but an exact match would silently drop the
+	// workspace from the title the moment one is added.
+	const match = matchRoute({ to: "/v2-workspace/$workspaceId", fuzzy: true });
 	const workspaceId = match ? match.workspaceId : null;
 	// Already fanned out for the sidebar — this reads the same rows rather than
 	// issuing a lookup of its own.
