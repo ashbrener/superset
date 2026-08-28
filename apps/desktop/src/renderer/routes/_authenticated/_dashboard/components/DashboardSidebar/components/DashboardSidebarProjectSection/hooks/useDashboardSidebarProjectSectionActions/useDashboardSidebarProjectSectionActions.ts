@@ -1,3 +1,4 @@
+import { errorMessage } from "@superset/i18n/errors";
 import { alert } from "@superset/ui/atoms/Alert";
 import { toast } from "@superset/ui/sonner";
 import { useNavigate } from "@tanstack/react-router";
@@ -102,9 +103,7 @@ export function useDashboardSidebarProjectSectionActions({
 		void getHostServiceClientByUrl(servingHostUrl)
 			.project.update.mutate({ projectId: project.id, name: trimmed })
 			.catch((err) => {
-				toast.error(
-					`Rename failed: ${err instanceof Error ? err.message : String(err)}`,
-				);
+				toast.error(`Rename failed: ${errorMessage(err)}`);
 			});
 	};
 
@@ -124,7 +123,7 @@ export function useDashboardSidebarProjectSectionActions({
 			await electronTrpcClient.external.openInFinder.mutate(localRepoPath);
 		} catch (error) {
 			toast.error(
-				`Failed to open in Finder: ${error instanceof Error ? error.message : "Unknown error"}`,
+				`Failed to open in Finder: ${errorMessage(error, "Unknown error")}`,
 			);
 		}
 	};
@@ -234,9 +233,7 @@ export function useDashboardSidebarProjectSectionActions({
 			}
 			setImportableWorktrees(untracked);
 		} catch (error) {
-			toast.error(
-				`Failed to list worktrees: ${error instanceof Error ? error.message : String(error)}`,
-			);
+			toast.error(`Failed to list worktrees: ${errorMessage(error)}`);
 		}
 	};
 
