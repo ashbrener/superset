@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { i18n } from "./i18n";
 import { hasFiniteRecurrence, rruleProblem } from "./rrule";
 
 /**
@@ -441,17 +442,45 @@ export type TriggerProblem = {
  * to the events whose sentence shows the chip; a rule for a field the config
  * member does not carry skips itself.
  */
+type ScopeNoun =
+	| "repository"
+	| "person"
+	| "channel"
+	| "reaction"
+	| "dataSource"
+	| "team"
+	| "project"
+	| "calendar"
+	| "sender";
+
+type ScopeChoice = "anyone" | "anySender";
+
 type ScopeRequirement = {
 	field: string;
-	noun: string;
-	orChoose?: string;
+	noun: ScopeNoun;
+	orChoose?: ScopeChoice;
 	when?: (config: TriggerConfigInput) => boolean;
 };
+
+function scopeChoiceLabel(choice: ScopeChoice): string {
+	switch (choice) {
+		case "anyone":
+			return i18n._({
+				id: "shared.automationTriggers.choice.anyone",
+				message: "Anyone",
+			});
+		case "anySender":
+			return i18n._({
+				id: "shared.automationTriggers.choice.anySender",
+				message: "Any sender",
+			});
+	}
+}
 
 const person = (
 	field: string,
 	when?: (config: TriggerConfigInput) => boolean,
-): ScopeRequirement => ({ field, noun: "person", orChoose: "Anyone", when });
+): ScopeRequirement => ({ field, noun: "person", orChoose: "anyone", when });
 
 const REQUIREMENTS: Partial<
 	Record<TriggerConfigInput["kind"], ScopeRequirement[]>
@@ -477,7 +506,7 @@ const REQUIREMENTS: Partial<
 		person("actor"),
 	],
 	notion: [
-		{ field: "dataSources", noun: "data source" },
+		{ field: "dataSources", noun: "dataSource" },
 		person("actor"),
 		person("mentionedUser"),
 	],
@@ -512,7 +541,7 @@ const REQUIREMENTS: Partial<
 	// The sender is the primary scope, as the repository is for GitHub: a
 	// mailbox-wide trigger has to be chosen ("Any sender"), never arrived at by
 	// leaving the chip empty.
-	gmail: [{ field: "from", noun: "sender", orChoose: "Any sender" }],
+	gmail: [{ field: "from", noun: "sender", orChoose: "anySender" }],
 };
 
 /**
@@ -539,9 +568,26 @@ export function describeTriggerProblems(
 			problems.push({
 				index,
 				field: rule.field,
+				// The noun travels as a select key, not an interpolated label:
+				// "at least one {noun}" needs an article and case that agree with
+				// the noun, which no language with grammatical gender can produce
+				// from a placeholder. Each locale inflects every branch itself.
 				message: rule.orChoose
-					? `Specify at least one ${rule.noun}, or choose ${rule.orChoose}.`
-					: `Specify at least one ${rule.noun}.`,
+					? i18n._({
+							id: "shared.automationTriggers.scopeRequiredOrChoose",
+							message:
+								"{noun, select, person {Specify at least one person, or choose {choice}.} sender {Specify at least one sender, or choose {choice}.} other {Specify at least one entry, or choose {choice}.}}",
+							values: {
+								noun: rule.noun,
+								choice: scopeChoiceLabel(rule.orChoose),
+							},
+						})
+					: i18n._({
+							id: "shared.automationTriggers.scopeRequired",
+							message:
+								"{noun, select, repository {Specify at least one repository.} channel {Specify at least one channel.} reaction {Specify at least one reaction.} dataSource {Specify at least one data source.} team {Specify at least one team.} project {Specify at least one project.} calendar {Specify at least one calendar.} other {Specify at least one entry.}}",
+							values: { noun: rule.noun },
+						}),
 			});
 		}
 
@@ -551,13 +597,19 @@ export function describeTriggerProblems(
 				problems.push({
 					index,
 					field: "rrule",
-					message: "Enter a valid recurrence rule.",
+					message: i18n._({
+						id: "shared.automationTriggers.invalidRrule",
+						message: "Enter a valid recurrence rule.",
+					}),
 				});
 			} else if (hasFiniteRecurrence(config.rrule)) {
 				problems.push({
 					index,
 					field: "rrule",
-					message: "Schedules repeat — remove COUNT or UNTIL.",
+					message: i18n._({
+						id: "shared.automationTriggers.finiteRrule",
+						message: "Schedules repeat — remove COUNT or UNTIL.",
+					}),
 				});
 			}
 		}
@@ -571,5 +623,8 @@ export function summarizeTriggerProblems(
 	problems: TriggerProblem[],
 ): string | null {
 	if (problems.length === 0) return null;
-	return "Some triggers need additional configuration";
+	return i18n._({
+		id: "shared.automationTriggers.needConfiguration",
+		message: "Some triggers need additional configuration",
+	});
 }
