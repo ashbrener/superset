@@ -45,6 +45,7 @@ import { env } from "main/env.main";
 import { exitImmediately } from "main/index";
 import { hasCustomRingtone } from "main/lib/custom-ringtones";
 import { getHostServiceCoordinator } from "main/lib/host-service-coordinator";
+import { applyAppLanguage } from "main/lib/language";
 import { localDb } from "main/lib/local-db";
 import {
 	DEFAULT_AUTO_APPLY_DEFAULT_PRESET,
@@ -54,6 +55,7 @@ import {
 	DEFAULT_OPEN_LINKS_IN_APP,
 	DEFAULT_SHOW_PRESETS_BAR,
 	DEFAULT_SHOW_RESOURCE_MONITOR,
+	DEFAULT_TERMINAL_COPY_ON_SELECT,
 	DEFAULT_TERMINAL_LINK_BEHAVIOR,
 	DEFAULT_TERMINAL_PARKED_RUNTIME_CAP,
 	DEFAULT_USE_COMPACT_TERMINAL_ADD_BUTTON,
@@ -623,7 +625,7 @@ export const createSettingsRouter = () => {
 
 		setLanguage: publicProcedure
 			.input(z.object({ language: z.string().nullable() }))
-			.mutation(({ input }) => {
+			.mutation(async ({ input }) => {
 				const value =
 					input.language === null || input.language === "auto"
 						? null
@@ -642,6 +644,10 @@ export const createSettingsRouter = () => {
 						set: { language: value },
 					})
 					.run();
+				// The application and tray menus resolve their labels when they are
+				// built, so they need an explicit rebuild on a language change.
+				// Awaited: the catalog for the new locale loads on demand.
+				await applyAppLanguage(value);
 			}),
 
 		getSelectedRingtoneId: publicProcedure.query(() => {
@@ -1055,6 +1061,26 @@ export const createSettingsRouter = () => {
 					.onConflictDoUpdate({
 						target: settings.id,
 						set: { terminalParkedRuntimeCap: input.cap },
+					})
+					.run();
+
+				return { success: true };
+			}),
+
+		getTerminalCopyOnSelect: publicProcedure.query(() => {
+			const row = getSettings();
+			return row.terminalCopyOnSelect ?? DEFAULT_TERMINAL_COPY_ON_SELECT;
+		}),
+
+		setTerminalCopyOnSelect: publicProcedure
+			.input(z.object({ enabled: z.boolean() }))
+			.mutation(({ input }) => {
+				localDb
+					.insert(settings)
+					.values({ id: 1, terminalCopyOnSelect: input.enabled })
+					.onConflictDoUpdate({
+						target: settings.id,
+						set: { terminalCopyOnSelect: input.enabled },
 					})
 					.run();
 

@@ -192,6 +192,8 @@ export const hostAgentConfigs = sqliteTable(
 		// Args that resume a previous session; the session id is appended after
 		// them. Empty means the agent has no id-based resume.
 		resumeArgsJson: text("resume_args_json").notNull().default("[]"),
+		// Args that fork a previous session into a new provider session id.
+		forkArgsJson: text("fork_args_json").notNull().default("[]"),
 		envJson: text("env_json").notNull().default("{}"),
 		displayOrder: integer("display_order").notNull(),
 		createdAt: integer("created_at")
@@ -264,6 +266,53 @@ export const workspaces = sqliteTable(
 		uniqueIndex("workspaces_one_main_per_project")
 			.on(table.projectId)
 			.where(sql`type = 'main'`),
+	],
+);
+
+/**
+ * Presentation for a tag folder, host-side so it follows the user across
+ * devices: a row exists only once someone customises the folder (same
+ * lifecycle as the old local row). `tag` stays the stable slug agents
+ * target; `display_name` is what the sidebar shows — which is what makes
+ * rename a one-row update instead of retagging every member.
+ */
+export const workspaceTagSettings = sqliteTable(
+	"workspace_tag_settings",
+	{
+		projectId: text("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		tag: text().notNull(),
+		displayName: text("display_name"),
+		color: text(),
+		tabOrder: integer("tab_order"),
+		updatedAt: integer("updated_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+	},
+	(table) => [primaryKey({ columns: [table.projectId, table.tag] })],
+);
+
+/**
+ * Plain-string tags on workspaces — no tag entity, no tag ids. `tag` is
+ * stored already-normalized (trimmed + lowercased, see
+ * `@superset/shared/workspace-tags`); sidebar folders derive from these
+ * rows, so any actor that can tag a workspace can file it.
+ */
+export const workspaceTags = sqliteTable(
+	"workspace_tags",
+	{
+		workspaceId: text("workspace_id")
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		tag: text().notNull(),
+		createdAt: integer("created_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+	},
+	(table) => [
+		primaryKey({ columns: [table.workspaceId, table.tag] }),
+		index("workspace_tags_tag_idx").on(table.tag),
 	],
 );
 
