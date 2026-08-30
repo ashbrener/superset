@@ -16,9 +16,12 @@ import {
 } from "../../../db/schema";
 import { invalidateLabelCache } from "../../../ports/static-ports";
 import {
+	deleteTagSetting,
 	emitProjectChanged,
+	getProjectTagSettings,
 	toProjectSnapshot,
 	updateLocalProject,
+	upsertTagSetting,
 } from "../../../projects/local-project-store";
 import { createUserSimpleGit } from "../../../runtime/git/simple-git";
 import { disposeSessionsByWorkspaceId } from "../../../terminal/terminal";
@@ -76,6 +79,7 @@ export const projectRouter = router({
 			.all()
 			.map((row) => ({
 				id: row.id,
+				tagSettings: getProjectTagSettings(ctx.db, row.id),
 				// Empty until the backfill sweep fills it; folder name is the
 				// honest fallback (same rule as toProjectSnapshot).
 				name: row.name || basename(row.repoPath),
@@ -112,6 +116,61 @@ export const projectRouter = router({
 				});
 			}
 			return toProjectSnapshot(row);
+		}),
+
+	/**
+	 * Merge-upsert one tag folder's presentation (display name, color). The
+	 * tag itself never changes here — that is what keeps rename a one-row
+	 * update while agents keep targeting the stable slug.
+	 */
+	setTagSetting: protectedProcedure
+		.input(
+			z.object({
+				projectId: z.string().uuid(),
+				tag: z.string().min(1),
+				displayName: z.string().min(1).max(200).nullish(),
+				color: z.string().max(50).nullish(),
+				tabOrder: z.number().int().nullish(),
+			}),
+		)
+		.mutation(({ ctx, input }) => {
+			const settings = upsertTagSetting(
+				{ db: ctx.db, eventBus: ctx.eventBus },
+				input.projectId,
+				input.tag,
+				{
+					...(input.displayName !== undefined
+						? { displayName: input.displayName }
+						: {}),
+					...(input.color !== undefined ? { color: input.color } : {}),
+					...(input.tabOrder !== undefined ? { tabOrder: input.tabOrder } : {}),
+				},
+			);
+			if (!settings) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Project is not set up on this host",
+				});
+			}
+			return { tagSettings: settings };
+		}),
+
+	/** Drop one tag folder's presentation row (folder deletion). */
+	deleteTagSetting: protectedProcedure
+		.input(z.object({ projectId: z.string().uuid(), tag: z.string().min(1) }))
+		.mutation(({ ctx, input }) => {
+			const settings = deleteTagSetting(
+				{ db: ctx.db, eventBus: ctx.eventBus },
+				input.projectId,
+				input.tag,
+			);
+			if (!settings) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Project is not set up on this host",
+				});
+			}
+			return { tagSettings: settings };
 		}),
 
 	get: protectedProcedure

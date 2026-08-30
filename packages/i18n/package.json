@@ -27,22 +27,28 @@
 		"./react": {
 			"types": "./src/react.tsx",
 			"default": "./src/react.tsx"
+		},
+		"./server": {
+			"types": "./src/server.ts",
+			"default": "./src/server.ts"
 		}
 	},
 	"scripts": {
-		"extract": "lingui extract",
+		"extract": "lingui extract --overwrite && bun scripts/sort-po-references.ts",
 		"compile": "lingui compile --strict",
-		"check": "lingui extract --clean && lingui compile --strict && git diff --exit-code -- locales && test -z \"$(git status --porcelain locales)\"",
-		"pretypecheck": "lingui extract --clean && lingui compile --strict",
+		"check": "lingui extract --clean --overwrite && bun scripts/sort-po-references.ts && lingui compile --strict && bun scripts/check-stale-translations.ts && git diff --exit-code -- locales && test -z \"$(git status --porcelain locales)\"",
+		"pretypecheck": "lingui extract --clean --overwrite && bun scripts/sort-po-references.ts && lingui compile --strict",
 		"test": "bun test",
 		"typecheck": "tsc --noEmit --emitDeclarationOnly false",
-		"clean": "git clean -xdf .cache .turbo node_modules"
+		"clean": "git clean -xdf .cache .turbo node_modules",
+		"translate": "bun scripts/translate-missing.ts && bun scripts/sort-po-references.ts && lingui compile --strict"
 	},
 	"dependencies": {
 		"@lingui/core": "6.6.0",
 		"@lingui/react": "6.6.0"
 	},
 	"devDependencies": {
+		"@anthropic-ai/sdk": "0.78.0",
 		"@ast-grep/napi": "0.41.1",
 		"@lingui/cli": "6.6.0",
 		"@lingui/format-po": "6.6.0",

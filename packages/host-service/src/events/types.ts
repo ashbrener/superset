@@ -70,6 +70,8 @@ export interface WorkspaceSnapshot {
 	createdByUserId: string | null;
 	createdAt: number;
 	updatedAt: number;
+	/** Normalized, sorted tag set; sidebar folders derive from it. */
+	tags: string[];
 }
 
 export interface WorkspaceChangedMessage {
@@ -79,6 +81,14 @@ export interface WorkspaceChangedMessage {
 	/** Null for `deleted` — the row is already gone. */
 	workspace: WorkspaceSnapshot | null;
 	occurredAt: number;
+}
+
+/** One tag folder's host-side presentation (see workspace_tag_settings). */
+export interface TagSettingSnapshot {
+	tag: string;
+	displayName: string | null;
+	color: string | null;
+	tabOrder: number | null;
 }
 
 /**
@@ -100,6 +110,12 @@ export interface ProjectSnapshot {
 	color: string | null;
 	createdAt: number;
 	updatedAt: number;
+	/**
+	 * Tag-folder presentation rows. Optional: absent on snapshots built where
+	 * the emitter had no settings at hand (and from older hosts) — consumers
+	 * keep their last known set rather than clearing.
+	 */
+	tagSettings?: TagSettingSnapshot[];
 }
 
 export interface ProjectChangedMessage {
@@ -146,6 +162,12 @@ export interface EventBusErrorMessage {
 	message: string;
 }
 
+export interface PageWatchChangedMessage {
+	type: "page-watch:changed";
+	workspaceId: string;
+	occurredAt: number;
+}
+
 export type ServerMessage =
 	| FsEventsMessage
 	| GitChangedMessage
@@ -155,6 +177,7 @@ export type ServerMessage =
 	| WorkspaceChangedMessage
 	| WorkspaceCreateSettledMessage
 	| ProjectChangedMessage
+	| PageWatchChangedMessage
 	| EventBusErrorMessage;
 
 // ── Client → Server ────────────────────────────────────────────────

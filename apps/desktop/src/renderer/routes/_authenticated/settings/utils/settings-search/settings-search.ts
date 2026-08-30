@@ -57,6 +57,7 @@ export const SETTING_ITEM_ID = {
 	TERMINAL_SESSIONS: "terminal-sessions",
 	TERMINAL_LINK_BEHAVIOR: "terminal-link-behavior",
 	TERMINAL_BACKGROUND_LIMIT: "terminal-background-limit",
+	TERMINAL_COPY_ON_SELECT: "terminal-copy-on-select",
 
 	LINKS_FILE: "links-file",
 	LINKS_FOLDER: "links-folder",
@@ -201,6 +202,7 @@ export const SETTING_ITEM_VARIANT: Record<SettingItemId, SettingVariant> = {
 	[SETTING_ITEM_ID.TERMINAL_SESSIONS]: "shared",
 	[SETTING_ITEM_ID.TERMINAL_LINK_BEHAVIOR]: "v1",
 	[SETTING_ITEM_ID.TERMINAL_BACKGROUND_LIMIT]: "v2",
+	[SETTING_ITEM_ID.TERMINAL_COPY_ON_SELECT]: "v2",
 
 	[SETTING_ITEM_ID.LINKS_FILE]: "v2",
 	[SETTING_ITEM_ID.LINKS_FOLDER]: "v2",
@@ -314,7 +316,7 @@ const INTEGRATION_SEARCH_ITEMS: SettingsItem[] = INTEGRATIONS.map(
 		id: integrationSettingItemId(integration.provider),
 		section: "integrations",
 		title: integration.label,
-		description: integration.description,
+		description: integration.description(),
 		keywords: [
 			"integrations",
 			integration.label.toLowerCase(),
@@ -1074,6 +1076,21 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
 		],
 	},
 	{
+		id: SETTING_ITEM_ID.TERMINAL_COPY_ON_SELECT,
+		section: "terminal",
+		title: "Copy on select",
+		description: "Copy selected terminal text to the clipboard right away",
+		keywords: [
+			"terminal",
+			"copy",
+			"select",
+			"selection",
+			"clipboard",
+			"ghostty",
+			"iterm",
+		],
+	},
+	{
 		id: SETTING_ITEM_ID.TERMINAL_LINK_BEHAVIOR,
 		section: "terminal",
 		title: "Link Behavior",
@@ -1652,14 +1669,18 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
 	{
 		id: SETTING_ITEM_ID.SECURITY_EXPOSE_HOST_SERVICE_VIA_RELAY,
 		section: "security",
-		title: "Allow remote workspaces to access this device via relay",
+		title: "Allow remote access to this device via relay",
 		description:
-			"Controls whether remote workspaces can reach your local host service through the Superset relay",
+			"Controls whether other devices can reach your local host service through the Superset relay",
 		keywords: [
 			"security",
 			"relay",
 			"remote",
+			"remote access",
 			"workspace",
+			// The section was called Remote Workspaces until the rename; keep the
+			// old name searchable for anyone who still reaches for it.
+			"workspaces",
 			"expose",
 			"lockdown",
 			"network",

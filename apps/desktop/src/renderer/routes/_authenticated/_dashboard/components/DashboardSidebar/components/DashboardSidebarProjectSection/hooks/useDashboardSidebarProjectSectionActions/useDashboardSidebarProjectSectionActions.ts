@@ -1,3 +1,5 @@
+import { plural } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { errorMessage } from "@superset/i18n/errors";
 import { alert } from "@superset/ui/atoms/Alert";
 import { toast } from "@superset/ui/sonner";
@@ -24,6 +26,7 @@ interface UseDashboardSidebarProjectSectionActionsOptions {
 export function useDashboardSidebarProjectSectionActions({
 	project,
 }: UseDashboardSidebarProjectSectionActionsOptions) {
+	const { t } = useLingui();
 	const openModal = useOpenNewWorkspaceModal();
 	const navigate = useNavigate();
 	// Renames commit on a host serving the project — host.db owns the name.
@@ -97,13 +100,23 @@ export function useDashboardSidebarProjectSectionActions({
 		const trimmed = renameValue.trim();
 		if (!trimmed || trimmed === project.name) return;
 		if (!servingHostUrl) {
-			toast.error("Project's host is unreachable — cannot rename right now");
+			toast.error(
+				t({
+					id: "dashboard.sidebar.projectActions.renameHostUnreachable",
+					message: "Project's host is unreachable — cannot rename right now",
+				}),
+			);
 			return;
 		}
 		void getHostServiceClientByUrl(servingHostUrl)
 			.project.update.mutate({ projectId: project.id, name: trimmed })
 			.catch((err) => {
-				toast.error(`Rename failed: ${errorMessage(err)}`);
+				toast.error(
+					t({
+						id: "dashboard.sidebar.projectActions.renameFailed",
+						message: `Rename failed: ${errorMessage(err)}`,
+					}),
+				);
 			});
 	};
 
@@ -116,14 +129,22 @@ export function useDashboardSidebarProjectSectionActions({
 				? hostProject.repoPath
 				: undefined;
 		if (!localRepoPath) {
-			toast.error("Project folder is not on this machine");
+			toast.error(
+				t({
+					id: "dashboard.sidebar.projectActions.folderNotOnMachine",
+					message: "Project folder is not on this machine",
+				}),
+			);
 			return;
 		}
 		try {
 			await electronTrpcClient.external.openInFinder.mutate(localRepoPath);
 		} catch (error) {
 			toast.error(
-				`Failed to open in Finder: ${errorMessage(error, "Unknown error")}`,
+				t({
+					id: "dashboard.sidebar.projectActions.openInFinderFailed",
+					message: `Failed to open in Finder: ${errorMessage(error, "Unknown error")}`,
+				}),
 			);
 		}
 	};
@@ -137,13 +158,29 @@ export function useDashboardSidebarProjectSectionActions({
 
 	const confirmRemoveFromSidebar = () => {
 		alert({
-			title: "Remove project from sidebar?",
-			description:
-				"This will remove workspaces from the sidebar and delete all project sections. The workspaces or projects won't be deleted.",
+			title: t({
+				id: "dashboard.sidebar.projectActions.removeProjectTitle",
+				message: "Remove project from sidebar?",
+			}),
+			description: t({
+				id: "dashboard.sidebar.projectActions.removeProjectDescription",
+				message:
+					"This will remove workspaces from the sidebar and delete all project sections. The workspaces or projects won't be deleted.",
+			}),
 			actions: [
-				{ label: "Cancel", variant: "outline", onClick: () => {} },
 				{
-					label: "Remove",
+					label: t({
+						id: "dashboard.sidebar.projectActions.removeProjectCancel",
+						message: "Cancel",
+					}),
+					variant: "outline",
+					onClick: () => {},
+				},
+				{
+					label: t({
+						id: "dashboard.sidebar.projectActions.removeProjectConfirm",
+						message: "Remove",
+					}),
 					variant: "destructive",
 					onClick: () => removeProjectFromSidebar(project.id),
 				},
@@ -212,7 +249,11 @@ export function useDashboardSidebarProjectSectionActions({
 		if (importingWorktreesRef.current) return;
 		if (!servingHostUrl) {
 			toast.error(
-				"Project's host is unreachable — cannot import worktrees right now",
+				t({
+					id: "dashboard.sidebar.projectActions.importHostUnreachable",
+					message:
+						"Project's host is unreachable — cannot import worktrees right now",
+				}),
 			);
 			return;
 		}
@@ -228,12 +269,22 @@ export function useDashboardSidebarProjectSectionActions({
 					worktree.hasWorkspace === false && worktree.isMainWorktree === false,
 			);
 			if (untracked.length === 0) {
-				toast.info("All of this project's worktrees are already tracked");
+				toast.info(
+					t({
+						id: "dashboard.sidebar.projectActions.allWorktreesTracked",
+						message: "All of this project's worktrees are already tracked",
+					}),
+				);
 				return;
 			}
 			setImportableWorktrees(untracked);
 		} catch (error) {
-			toast.error(`Failed to list worktrees: ${errorMessage(error)}`);
+			toast.error(
+				t({
+					id: "dashboard.sidebar.projectActions.listWorktreesFailed",
+					message: `Failed to list worktrees: ${errorMessage(error)}`,
+				}),
+			);
 		}
 	};
 
@@ -248,7 +299,11 @@ export function useDashboardSidebarProjectSectionActions({
 		if (importingWorktreesRef.current || !untracked) return;
 		if (!servingHostId) {
 			toast.error(
-				"Project's host is unreachable — cannot import worktrees right now",
+				t({
+					id: "dashboard.sidebar.projectActions.confirmImportHostUnreachable",
+					message:
+						"Project's host is unreachable — cannot import worktrees right now",
+				}),
 			);
 			return;
 		}
@@ -276,13 +331,20 @@ export function useDashboardSidebarProjectSectionActions({
 			const imported = outcomes.length - errors.length;
 			if (errors.length > 0) {
 				toast.error(
-					`Imported ${imported} of ${untracked.length} worktrees: ${errors[0]}`,
+					t({
+						id: "dashboard.sidebar.projectActions.importPartialFailure",
+						message: `Imported ${imported} of ${untracked.length} worktrees: ${errors[0]}`,
+					}),
 				);
 			} else {
 				toast.success(
-					imported === 1
-						? "Imported 1 worktree as a workspace"
-						: `Imported ${imported} worktrees as workspaces`,
+					t({
+						id: "dashboard.sidebar.projectActions.importedWorktrees",
+						message: plural(imported, {
+							one: "Imported # worktree as a workspace",
+							other: "Imported # worktrees as workspaces",
+						}),
+					}),
 				);
 			}
 			setImportableWorktrees(null);
