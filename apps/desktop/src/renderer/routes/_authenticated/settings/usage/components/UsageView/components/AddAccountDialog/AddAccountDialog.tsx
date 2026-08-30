@@ -1,3 +1,6 @@
+import { msg } from "@lingui/core/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
+import { i18n } from "@superset/i18n";
 import { errorMessage } from "@superset/i18n/errors";
 import { Button } from "@superset/ui/button";
 import {
@@ -17,9 +20,9 @@ import { useHostUsageLogins } from "../../../../hooks/useHostUsageLogins";
 import { useSetDefaultUsageAccount } from "../../../../hooks/useSetDefaultUsageAccount";
 import { switchSignInCommand } from "../../utils/switchSignInCommand";
 
-type Provider = "claude" | "codex";
+type Agent = "claude" | "codex";
 
-const PROVIDER_LABELS: Record<Provider, string> = {
+const AGENT_LABELS: Record<Agent, string> = {
 	claude: "Claude Code",
 	codex: "Codex",
 };
@@ -27,7 +30,7 @@ const PROVIDER_LABELS: Record<Provider, string> = {
 /** The login being re-signed by "Switch sign-in": a profile dir, or the
  * system default when selection is null. */
 export interface SwitchSignInTarget {
-	provider: Provider;
+	agent: Agent;
 	selection: string | null;
 	/** Display name for the dialog copy ("~/.claude-2", an email, …). */
 	label: string;
@@ -44,8 +47,8 @@ function slugify(name: string): string {
 
 // $HOME stays unexpanded on purpose — the user's shell resolves it, so the
 // same command works over SSH to a remote host.
-function addAccountCommand(provider: Provider, slug: string): string {
-	if (provider === "claude") {
+function addAccountCommand(agent: Agent, slug: string): string {
+	if (agent === "claude") {
 		return `CLAUDE_CONFIG_DIR="$HOME/.claude-${slug}" claude auth login`;
 	}
 	return `mkdir -p "$HOME/.codex-${slug}" && CODEX_HOME="$HOME/.codex-${slug}" codex login`;
@@ -53,11 +56,11 @@ function addAccountCommand(provider: Provider, slug: string): string {
 
 /** The sign-in that landed after the dialog opened, if any. */
 function findNewLogin(
-	provider: Provider,
+	agent: Agent,
 	baseline: UsageLogins,
 	current: UsageLogins,
 ): { selection: string; label: string } | null {
-	if (provider === "claude") {
+	if (agent === "claude") {
 		const known = new Set(baseline.claude.map((entry) => entry.configDir));
 		const fresh = current.claude.find((entry) => !known.has(entry.configDir));
 		return fresh
@@ -75,7 +78,7 @@ function findSignInChange(
 	baseline: UsageLogins,
 	current: UsageLogins,
 ): { label: string } | null {
-	if (target.provider === "claude") {
+	if (target.agent === "claude") {
 		if (target.selection === null) {
 			return current.claudeDefaultEmail &&
 				current.claudeDefaultEmail !== baseline.claudeDefaultEmail
@@ -96,26 +99,38 @@ function findSignInChange(
 		baseline.codex.find((entry) => entry.home === home)?.fingerprint ?? null;
 	const after =
 		current.codex.find((entry) => entry.home === home)?.fingerprint ?? null;
-	return after && after !== before ? { label: "The Codex sign-in" } : null;
+	return after && after !== before
+		? {
+				label: i18n._(
+					msg({
+						id: "settings.usage.addAccount.codexSignInLabel",
+						message: "The Codex sign-in",
+					}),
+				),
+			}
+		: null;
 }
 
 interface AddAccountDialogProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	hostUrl: string | null;
-	/** Provider being added; the per-provider Add buttons preselect it. */
-	provider: Provider;
+	/** Agent being added; the per-agent Add buttons preselect it. */
+	agent: Agent;
 	/** Called once when the new sign-in is detected, to refresh quota. */
 	onAccountAdded: () => void;
+	/** Called after "Use for new agents" makes the added account the default;
+	 * the owner toasts, or offers to restart running agents onto it. */
+	onDefaultSwitched: (agent: Agent, accountLabel: string) => void;
 	/** When set, the dialog re-signs this existing login instead of adding a
 	 * separate profile. */
 	switchTarget?: SwitchSignInTarget | null;
 }
 
 /**
- * Two credential-free sign-in flows: adding another provider account as a
+ * Two credential-free sign-in flows: adding another agent account as a
  * separate profile dir, or re-signing an existing login (a profile, or the
- * system default). Either way the user runs the provider's own login in a
+ * system default). Either way the user runs the agent's own login in a
  * terminal and we only watch local state for the result — Superset never
  * handles the credentials (see usage/default-account.ts).
  */
@@ -123,11 +138,13 @@ export function AddAccountDialog({
 	open,
 	onOpenChange,
 	hostUrl,
-	provider: addProvider,
+	agent: addAgent,
 	onAccountAdded,
+	onDefaultSwitched,
 	switchTarget = null,
 }: AddAccountDialogProps) {
-	const provider = switchTarget?.provider ?? addProvider;
+	const { t } = useLingui();
+	const agent = switchTarget?.agent ?? addAgent;
 	const [name, setName] = useState("work");
 	const [copied, setCopied] = useState(false);
 	const [found, setFound] = useState<{
@@ -163,7 +180,7 @@ export function AddAccountDialog({
 			// wizard).
 			if (!hostUrl) return;
 			void getHostServiceClientByUrl(hostUrl)
-				.usage.prepareAccount.mutate({ provider, selection })
+				.usage.prepareAccount.mutate({ agent, selection })
 				.catch(() => {});
 		};
 
@@ -181,7 +198,7 @@ export function AddAccountDialog({
 			}
 			return;
 		}
-		const fresh = findNewLogin(provider, baselineRef.current, logins);
+		const fresh = findNewLogin(agent, baselineRef.current, logins);
 		if (fresh) {
 			setFound(fresh);
 			onAccountAdded();
@@ -190,7 +207,7 @@ export function AddAccountDialog({
 	}, [
 		open,
 		loginsQuery.data,
-		provider,
+		agent,
 		switchTarget,
 		found,
 		onAccountAdded,
@@ -200,7 +217,7 @@ export function AddAccountDialog({
 	const slug = slugify(name);
 	const command = switchTarget
 		? switchSignInCommand(switchTarget)
-		: addAccountCommand(provider, slug);
+		: addAccountCommand(agent, slug);
 
 	const copyCommand = () => {
 		void navigator.clipboard.writeText(command).then(() => {
@@ -211,8 +228,14 @@ export function AddAccountDialog({
 
 	const switchDescription = switchTarget
 		? switchTarget.selection === null
-			? `Sign the system-default ${PROVIDER_LABELS[switchTarget.provider]} login into a different account. It replaces the current default sign-in on this machine; profiles and running agents are unaffected.`
-			: `Sign the ${switchTarget.label} profile into a different account. Other profiles, the system default, and running agents are unaffected.`
+			? t({
+					id: "settings.usage.addAccount.switchDefaultDescription",
+					message: `Sign the system-default ${AGENT_LABELS[switchTarget.agent]} login into a different account. It replaces the current default sign-in on this machine; profiles and running agents are unaffected.`,
+				})
+			: t({
+					id: "settings.usage.addAccount.switchProfileDescription",
+					message: `Sign the ${switchTarget.label} profile into a different account. Other profiles, the system default, and running agents are unaffected.`,
+				})
 		: null;
 
 	return (
@@ -220,13 +243,24 @@ export function AddAccountDialog({
 			<DialogContent className="max-w-md">
 				<DialogHeader>
 					<DialogTitle>
-						{switchTarget
-							? "Switch sign-in"
-							: `Add ${PROVIDER_LABELS[provider]} account`}
+						{switchTarget ? (
+							<Trans id="settings.usage.addAccount.switchTitle">
+								Switch sign-in
+							</Trans>
+						) : (
+							<Trans id="settings.usage.addAccount.addTitle">
+								Add {AGENT_LABELS[agent]} account
+							</Trans>
+						)}
 					</DialogTitle>
 					<DialogDescription>
-						{switchDescription ??
-							"Sign in to a second subscription as a separate profile. Your current login is untouched, and the new profile shares your skills, plugins, MCP servers, and settings."}
+						{switchDescription ?? (
+							<Trans id="settings.usage.addAccount.addDescription">
+								Sign in to a second subscription as a separate profile. Your
+								current login is untouched, and the new profile shares your
+								skills, plugins, MCP servers, and settings.
+							</Trans>
+						)}
 					</DialogDescription>
 				</DialogHeader>
 
@@ -234,26 +268,29 @@ export function AddAccountDialog({
 					<div className="flex flex-col gap-3">
 						<div className="rounded-md border bg-card/40 p-3 text-sm">
 							<span className="font-medium">{found.label}</span>{" "}
-							{switchTarget
-								? "is now signed in here."
-								: "is signed in and will show its quota here."}
+							{switchTarget ? (
+								<Trans id="settings.usage.addAccount.switchedSuffix">
+									is now signed in here.
+								</Trans>
+							) : (
+								<Trans id="settings.usage.addAccount.addedSuffix">
+									is signed in and will show its quota here.
+								</Trans>
+							)}
 						</div>
 						<div className="flex justify-end gap-2">
 							<Button variant="ghost" onClick={() => onOpenChange(false)}>
-								Done
+								<Trans id="settings.usage.addAccount.done">Done</Trans>
 							</Button>
 							{!switchTarget && found.selection !== null && (
 								<Button
 									disabled={setDefault.isPending}
 									onClick={() => {
 										setDefault.mutate(
-											{ provider, selection: found.selection },
+											{ agent, selection: found.selection },
 											{
 												onSuccess: () => {
-													toast.success(`New agents will use ${found.label}.`, {
-														description:
-															"Running sessions keep their current account — restart them to switch.",
-													});
+													onDefaultSwitched(agent, found.label);
 													onOpenChange(false);
 												},
 												onError: (error) => toast.error(errorMessage(error)),
@@ -261,7 +298,9 @@ export function AddAccountDialog({
 										);
 									}}
 								>
-									Use for new agents
+									<Trans id="settings.usage.addAccount.useForNewAgents">
+										Use for new agents
+									</Trans>
 								</Button>
 							)}
 						</div>
@@ -271,7 +310,9 @@ export function AddAccountDialog({
 						{!switchTarget && (
 							<div className="flex items-center gap-2">
 								<span className="text-xs text-muted-foreground">
-									Profile name
+									<Trans id="settings.usage.addAccount.profileName">
+										Profile name
+									</Trans>
 								</span>
 								<Input
 									value={name}
@@ -284,8 +325,10 @@ export function AddAccountDialog({
 
 						<div className="flex flex-col gap-1">
 							<span className="text-xs text-muted-foreground">
-								Run this in any terminal on this host, then finish the sign-in
-								in your browser:
+								<Trans id="settings.usage.addAccount.runCommandHint">
+									Run this in any terminal on this host, then finish the sign-in
+									in your browser:
+								</Trans>
 							</span>
 							<div className="flex items-start gap-1.5 rounded-md border bg-muted/40 p-2">
 								<code className="flex-1 whitespace-pre-wrap break-all font-mono text-[11px]">
@@ -308,7 +351,10 @@ export function AddAccountDialog({
 
 						<div className="flex items-center gap-1.5 text-xs text-muted-foreground">
 							<LuLoaderCircle className="size-3 animate-spin" />
-							Waiting for the sign-in to complete — this updates automatically.
+							<Trans id="settings.usage.addAccount.waitingForSignIn">
+								Waiting for the sign-in to complete — this updates
+								automatically.
+							</Trans>
 						</div>
 					</div>
 				)}

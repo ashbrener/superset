@@ -91,6 +91,7 @@ export function DashboardSidebarProjectSection({
 	if (isSidebarCollapsed) {
 		return (
 			<DashboardSidebarProjectContextMenu
+				projectId={project.id}
 				onCreateSection={handleNewSection}
 				onImportWorktrees={handleImportWorktrees}
 				onOpenInFinder={handleOpenInFinder}
@@ -123,6 +124,7 @@ export function DashboardSidebarProjectSection({
 	return (
 		<div className="mt-1 first:mt-0">
 			<DashboardSidebarProjectContextMenu
+				projectId={project.id}
 				onCreateSection={handleNewSection}
 				onImportWorktrees={handleImportWorktrees}
 				onOpenInFinder={handleOpenInFinder}

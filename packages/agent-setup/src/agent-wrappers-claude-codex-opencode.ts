@@ -24,7 +24,7 @@ import { getOpenCodeConfigDir, getOpenCodePluginDir } from "./paths";
 export const OPENCODE_PLUGIN_FILE = "superset-notify.js";
 
 const OPENCODE_PLUGIN_SIGNATURE = "// Superset opencode plugin";
-const OPENCODE_PLUGIN_VERSION = "v8";
+const OPENCODE_PLUGIN_VERSION = "v9";
 export const OPENCODE_PLUGIN_MARKER = `${OPENCODE_PLUGIN_SIGNATURE} ${OPENCODE_PLUGIN_VERSION}`;
 
 /**
@@ -156,8 +156,10 @@ export function getCodexGlobalHooksJsonPath(): string {
 
 const CODEX_MANAGED_EVENTS: Record<string, { matcher?: string }> = {
 	SessionStart: {},
+	SessionEnd: {},
 	UserPromptSubmit: {},
 	Stop: {},
+	Interrupt: {},
 };
 
 function codexHooksSpec(
