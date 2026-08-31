@@ -1,4 +1,4 @@
-import { Trans, useLingui } from "@lingui/react/macro";
+import { Trans } from "@lingui/react/macro";
 import {
 	ContextMenuItem,
 	ContextMenuSeparator,
@@ -13,12 +13,8 @@ import {
 	DropdownMenuSubContent,
 	DropdownMenuSubTrigger,
 } from "@superset/ui/dropdown-menu";
-import { HiCheck } from "react-icons/hi2";
 import { LuEyeOff, LuPalette, LuPencil, LuTrash2 } from "react-icons/lu";
-import {
-	PROJECT_COLOR_DEFAULT,
-	PROJECT_COLORS,
-} from "shared/constants/project-colors";
+import { ColorMenuItems } from "../../../../../ColorMenuItems";
 import type {
 	DashboardSidebarSectionActionsProps,
 	SectionActionsMenuKind,
@@ -37,21 +33,6 @@ export function SectionActionsMenuItems({
 	onDelete,
 	onHide,
 }: SectionActionsMenuItemsProps) {
-	const { t } = useLingui();
-	const selectedValue = color ?? PROJECT_COLOR_DEFAULT;
-	const colorOptions: { name: string; value: string }[] = [
-		{
-			name: t({
-				id: "dashboard.sidebar.sectionMenu.defaultColor",
-				message: "Default",
-			}),
-			value: PROJECT_COLOR_DEFAULT,
-		},
-		...PROJECT_COLORS.map((projectColor) => ({
-			name: projectColor.name(),
-			value: projectColor.value,
-		})),
-	];
 	const iconClassName = kind === "context" ? "size-4 mr-2" : "size-4";
 
 	const renderItem = ({

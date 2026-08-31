@@ -1,3 +1,4 @@
+import { useLingui } from "@lingui/react/macro";
 import { ContextMenuItem } from "@superset/ui/context-menu";
 import { DropdownMenuItem } from "@superset/ui/dropdown-menu";
 import { HiCheck } from "react-icons/hi2";
@@ -22,11 +23,23 @@ interface ColorMenuItemsProps {
  * the selected-state styling can't drift apart between the two menus.
  */
 export function ColorMenuItems({ kind, color, onSelect }: ColorMenuItemsProps) {
+	const { t } = useLingui();
 	const Item = kind === "context" ? ContextMenuItem : DropdownMenuItem;
 	const selectedValue = color ?? PROJECT_COLOR_DEFAULT;
-	const options = [
-		{ name: "Default", value: PROJECT_COLOR_DEFAULT },
-		...PROJECT_COLORS,
+	// PROJECT_COLORS carries `name` as a thunk so the constants module stays
+	// importable from the Electron main process; resolve it here.
+	const options: { name: string; value: string }[] = [
+		{
+			name: t({
+				id: "dashboard.sidebar.colorMenu.defaultColor",
+				message: "Default",
+			}),
+			value: PROJECT_COLOR_DEFAULT,
+		},
+		...PROJECT_COLORS.map((option) => ({
+			name: option.name(),
+			value: option.value,
+		})),
 	];
 
 	return (
