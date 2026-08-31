@@ -1,3 +1,5 @@
+import { plural } from "@lingui/core/macro";
+import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -33,8 +35,8 @@ export function DashboardSidebarProjectBulkToolbar({
 	onMoveToCollection,
 	onCreateCollection,
 }: DashboardSidebarProjectBulkToolbarProps) {
+	const { t } = useLingui();
 	const count = selectedProjects.length;
-	const noun = count === 1 ? "project" : "projects";
 	const anyInCollection = selectedProjects.some(
 		(project) => project.collectionId !== null,
 	);
@@ -42,7 +44,10 @@ export function DashboardSidebarProjectBulkToolbar({
 	return (
 		<div
 			role="toolbar"
-			aria-label="Selected project actions"
+			aria-label={t({
+				id: "dashboard.sidebar.projectBulk.toolbarLabel",
+				message: "Selected project actions",
+			})}
 			className="flex min-h-8 w-full shrink-0 items-center gap-0.5 py-1 pl-2 pr-2"
 		>
 			<Tooltip delayDuration={300}>
@@ -51,16 +56,28 @@ export function DashboardSidebarProjectBulkToolbar({
 						type="button"
 						onClick={onClearSelection}
 						className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-fill-hover hover:text-foreground"
-						aria-label="Clear project selection"
+						aria-label={t({
+							id: "dashboard.sidebar.projectBulk.clearSelectionLabel",
+							message: "Clear project selection",
+						})}
 					>
 						<LuX className="size-3.5" />
 					</button>
 				</TooltipTrigger>
-				<TooltipContent side="bottom">Clear selection (Esc)</TooltipContent>
+				<TooltipContent side="bottom">
+					<Trans id="dashboard.sidebar.projectBulk.clearSelection">
+						Clear selection (Esc)
+					</Trans>
+				</TooltipContent>
 			</Tooltip>
 
 			<span className="min-w-0 flex-1 truncate pl-1 text-xs font-medium text-foreground">
-				{count} {noun}
+				<Plural
+					id="dashboard.sidebar.projectBulk.selectedCount"
+					value={count}
+					one="# project"
+					other="# projects"
+				/>
 			</span>
 
 			<div className="mx-1 h-4 w-px bg-border" />
@@ -72,18 +89,30 @@ export function DashboardSidebarProjectBulkToolbar({
 							<button
 								type="button"
 								className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-fill-hover hover:text-foreground"
-								aria-label={`Move ${count} selected ${noun} to a collection`}
+								aria-label={t({
+									id: "dashboard.sidebar.projectBulk.moveToCollectionLabel",
+									message: plural(count, {
+										one: "Move # selected project to a collection",
+										other: "Move # selected projects to a collection",
+									}),
+								})}
 							>
 								<LuFolderInput className="size-3.5" />
 							</button>
 						</DropdownMenuTrigger>
 					</TooltipTrigger>
-					<TooltipContent side="bottom">Move to collection</TooltipContent>
+					<TooltipContent side="bottom">
+						<Trans id="dashboard.sidebar.projectBulk.moveToCollection">
+							Move to collection
+						</Trans>
+					</TooltipContent>
 				</Tooltip>
 				<DropdownMenuContent align="end" side="bottom" className="w-48">
 					<DropdownMenuItem onSelect={onCreateCollection}>
 						<LuFolderPlus className="size-4" />
-						New collection
+						<Trans id="dashboard.sidebar.projectBulk.newCollection">
+							New collection
+						</Trans>
 					</DropdownMenuItem>
 					{collections.length > 0 && <DropdownMenuSeparator />}
 					{collections.map((collection) => (
@@ -112,12 +141,19 @@ export function DashboardSidebarProjectBulkToolbar({
 						disabled={!anyInCollection}
 						onClick={() => onMoveToCollection(null)}
 						className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-fill-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-35"
-						aria-label="Remove selected projects from their collections"
+						aria-label={t({
+							id: "dashboard.sidebar.projectBulk.removeFromCollectionLabel",
+							message: "Remove selected projects from their collections",
+						})}
 					>
 						<LuUngroup className="size-3.5" />
 					</button>
 				</TooltipTrigger>
-				<TooltipContent side="bottom">Remove from collection</TooltipContent>
+				<TooltipContent side="bottom">
+					<Trans id="dashboard.sidebar.projectBulk.removeFromCollection">
+						Remove from collection
+					</Trans>
+				</TooltipContent>
 			</Tooltip>
 		</div>
 	);

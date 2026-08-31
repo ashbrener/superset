@@ -1,3 +1,4 @@
+import { Trans, useLingui } from "@lingui/react/macro";
 import {
 	ContextMenuItem,
 	ContextMenuSeparator,
@@ -64,6 +65,7 @@ export function CollectionActionsMenuItems({
 		kind === "context" ? ContextMenuSubContent : DropdownMenuSubContent;
 	const iconClassName = kind === "context" ? "size-4 mr-2" : "size-4";
 
+	const { t } = useLingui();
 	const selectImageFile = electronTrpc.window.selectImageFile.useMutation();
 
 	// A picked file is re-encoded small before it goes in the store: collection
@@ -74,9 +76,15 @@ export function CollectionActionsMenuItems({
 			if (result.canceled || !result.dataUrl) return;
 			onSetIcon(await shrinkIconDataUrl(result.dataUrl));
 		} catch (error) {
-			toast.error("Couldn't use that image", {
-				description: error instanceof Error ? error.message : String(error),
-			});
+			toast.error(
+				t({
+					id: "dashboard.sidebar.collectionMenu.iconImageFailed",
+					message: "Couldn't use that image",
+				}),
+				{
+					description: error instanceof Error ? error.message : String(error),
+				},
+			);
 		}
 	};
 
@@ -84,12 +92,16 @@ export function CollectionActionsMenuItems({
 		<>
 			<Item onSelect={onRename}>
 				<LuPencil className={iconClassName} />
-				Rename collection
+				<Trans id="dashboard.sidebar.collectionMenu.rename">
+					Rename collection
+				</Trans>
 			</Item>
 			<Sub>
 				<SubTrigger>
 					<LuPalette className={iconClassName} />
-					Set collection color
+					<Trans id="dashboard.sidebar.collectionMenu.setColor">
+						Set collection color
+					</Trans>
 				</SubTrigger>
 				<SubContent className="max-h-80 w-40 overflow-y-auto">
 					<ColorMenuItems
@@ -102,7 +114,9 @@ export function CollectionActionsMenuItems({
 			<Sub>
 				<SubTrigger>
 					<LuSmile className={iconClassName} />
-					Set collection icon
+					<Trans id="dashboard.sidebar.collectionMenu.setIcon">
+						Set collection icon
+					</Trans>
 				</SubTrigger>
 				<SubContent className="w-56">
 					{/* Menu items, not plain buttons, so the grid stays on the menu's
@@ -111,7 +125,10 @@ export function CollectionActionsMenuItems({
 						{COLLECTION_ICON_EMOJI.map((emoji) => (
 							<Item
 								key={emoji}
-								aria-label={`Use ${emoji} as the collection icon`}
+								aria-label={t({
+									id: "dashboard.sidebar.collectionMenu.useEmojiIcon",
+									message: `Use ${emoji} as the collection icon`,
+								})}
 								onSelect={() => onSetIcon(emoji)}
 								className={cn(
 									"size-6 justify-center p-0 text-base",
@@ -125,12 +142,16 @@ export function CollectionActionsMenuItems({
 					<Separator />
 					<Item onSelect={() => void chooseImageIcon()}>
 						<LuImage className={iconClassName} />
-						Choose image…
+						<Trans id="dashboard.sidebar.collectionMenu.chooseImage">
+							Choose image…
+						</Trans>
 					</Item>
 					{collection.icon && (
 						<Item onSelect={() => onSetIcon(null)}>
 							<LuX className={iconClassName} />
-							Remove icon
+							<Trans id="dashboard.sidebar.collectionMenu.removeIcon">
+								Remove icon
+							</Trans>
 						</Item>
 					)}
 				</SubContent>
@@ -138,7 +159,9 @@ export function CollectionActionsMenuItems({
 			<Separator />
 			<Item variant="destructive" onSelect={onDelete}>
 				<LuTrash2 className={iconClassName} />
-				Delete collection
+				<Trans id="dashboard.sidebar.collectionMenu.delete">
+					Delete collection
+				</Trans>
 			</Item>
 		</>
 	);

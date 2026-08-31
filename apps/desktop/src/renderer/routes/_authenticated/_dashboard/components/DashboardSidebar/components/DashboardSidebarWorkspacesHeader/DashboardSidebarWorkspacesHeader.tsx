@@ -147,11 +147,13 @@ export function DashboardSidebarWorkspacesHeader({
 						</Trans>
 					</DropdownMenuItem>
 					<DropdownMenuSeparator />
-					{/* Sits directly under "Create new project", which also carries a
-					    collection icon — so name the level and use the project-collection icon. */}
+					{/* Sits directly under "Create new project"; the collection icon
+					    distinguishes the two. */}
 					<DropdownMenuItem onSelect={onNewCollection}>
 						<LuFolders className="size-4" />
-						New project collection
+						<Trans id="dashboard.sidebar.workspacesHeader.newCollection">
+							New collection
+						</Trans>
 					</DropdownMenuItem>
 				</DropdownMenuContent>
 			</DropdownMenu>

@@ -136,7 +136,13 @@ export const DashboardSidebarProjectRow = forwardRef<
 					) : (
 						<span className="truncate">
 							{projectName}
-							{isSelected && <span className="sr-only">, selected</span>}
+							{isSelected && (
+								<span className="sr-only">
+									<Trans id="dashboard.sidebar.projectRow.selectedSuffix">
+										, selected
+									</Trans>
+								</span>
+							)}
 						</span>
 					)}
 				</div>
