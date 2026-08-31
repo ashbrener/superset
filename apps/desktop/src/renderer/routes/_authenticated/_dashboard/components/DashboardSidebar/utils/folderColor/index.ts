@@ -1,1 +1,0 @@
-export { hasCustomColor } from "./folderColor";

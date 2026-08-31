@@ -18,7 +18,7 @@ interface ColorMenuItemsProps {
 }
 
 /**
- * The colour options behind every sidebar "Set … color" submenu (folders and
+ * The colour options behind every sidebar "Set … color" submenu (collections and
  * project groups). Shared so the option list, the null-for-default contract and
  * the selected-state styling can't drift apart between the two menus.
  */

@@ -27,14 +27,17 @@ import {
 } from "react";
 import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
 import type {
-	DashboardSidebarFolder,
+	DashboardSidebarCollection,
 	DashboardSidebarPinnedWorkspace,
 	DashboardSidebarProject,
 	DashboardSidebarProjectChild,
 	DashboardSidebarSection,
 	DashboardSidebarWorkspace,
 } from "../../types";
-import { isFolderDropId, parseFolderDropId } from "../../utils/folderDnd";
+import {
+	isCollectionDropId,
+	parseCollectionDropId,
+} from "../../utils/collectionDnd";
 
 // ── ID helpers ───────────────────────────────────────────────────────
 
@@ -294,8 +297,11 @@ interface UseSidebarDndOptions {
 	sessionWorkspaces: DashboardSidebarWorkspace[];
 	onReorderProjects: (projectIds: string[]) => void;
 	/** Folders projects can be dropped into. Empty when none exist. */
-	folders: DashboardSidebarFolder[];
-	onMoveProjectToFolder: (projectId: string, folderId: string | null) => void;
+	collections: DashboardSidebarCollection[];
+	onMoveProjectToCollection: (
+		projectId: string,
+		collectionId: string | null,
+	) => void;
 }
 
 export function useSidebarDnd({
@@ -303,8 +309,8 @@ export function useSidebarDnd({
 	pinnedWorkspaces,
 	sessionWorkspaces,
 	onReorderProjects,
-	folders,
-	onMoveProjectToFolder,
+	collections,
+	onMoveProjectToCollection,
 }: UseSidebarDndOptions) {
 	const {
 		reorderPinnedWorkspaces,
@@ -364,10 +370,10 @@ export function useSidebarDnd({
 		[projects],
 	);
 
-	// Live folder ids, for resolving a drop target whose folder was deleted.
-	const folderIds = useMemo(
-		() => new Set(folders.map((folder) => folder.id)),
-		[folders],
+	// Live collection ids, for resolving a drop target whose collection was deleted.
+	const collectionIds = useMemo(
+		() => new Set(collections.map((collection) => collection.id)),
+		[collections],
 	);
 
 	const typeOf = useCallback(
@@ -637,17 +643,17 @@ export function useSidebarDnd({
 			const type = typeOf(args.active.id);
 
 			if (type === "project") {
-				// Projects sort among projects, and additionally target folder
+				// Projects sort among projects, and additionally target collection
 				// headers and the root zone to re-parent.
 				const droppableContainers = args.droppableContainers.filter(
 					(container) =>
 						projectIds.has(String(container.id)) ||
-						isFolderDropId(String(container.id)),
+						isCollectionDropId(String(container.id)),
 				);
 
 				// Pointer first. closestCenter measures from the dragged rect's
 				// centre, and a project section is measured tall at drag start — so
-				// its centre sits far from the cursor and the thin strips (a folder
+				// its centre sits far from the cursor and the thin strips (a collection
 				// header, the root zone) were near-impossible to hit. pointerWithin
 				// returns every container the pointer is inside, nearest centre
 				// first, which also resolves the overlap the root zone creates: over
@@ -894,33 +900,33 @@ export function useSidebarDnd({
 				const overId = String(over.id);
 				if (activeId === overId) return;
 
-				// Dropped on a folder header (or the root zone): re-parent only —
+				// Dropped on a collection header (or the root zone): re-parent only —
 				// position within the destination is left to a follow-up drag.
-				const dropFolderId = parseFolderDropId(overId);
-				if (dropFolderId !== undefined) {
+				const dropCollectionId = parseCollectionDropId(overId);
+				if (dropCollectionId !== undefined) {
 					const dragged = projectsById.get(activeId);
-					if (dragged && dragged.folderId !== dropFolderId) {
-						onMoveProjectToFolder(activeId, dropFolderId);
+					if (dragged && dragged.collectionId !== dropCollectionId) {
+						onMoveProjectToCollection(activeId, dropCollectionId);
 					}
 					return;
 				}
 
 				if (!projectIds.has(overId)) return;
 
-				// Dropped on another project: adopt that project's folder (so
-				// dragging into a folder's list joins it) and reorder.
+				// Dropped on another project: adopt that project's collection (so
+				// dragging into a collection's list joins it) and reorder.
 				const target = projectsById.get(overId);
 				const dragged = projectsById.get(activeId);
-				// A project whose folder no longer exists renders at the root but
-				// still carries the dead id. Resolve against the live folder set, or
-				// dropping onto it would move the dragged project into a folder that
+				// A project whose collection no longer exists renders at the root but
+				// still carries the dead id. Resolve against the live collection set, or
+				// dropping onto it would move the dragged project into a collection that
 				// isn't there instead of to the root it appears to be in.
-				const targetFolderId =
-					target?.folderId && folderIds.has(target.folderId)
-						? target.folderId
+				const targetCollectionId =
+					target?.collectionId && collectionIds.has(target.collectionId)
+						? target.collectionId
 						: null;
-				if (target && dragged && dragged.folderId !== targetFolderId) {
-					onMoveProjectToFolder(activeId, targetFolderId);
+				if (target && dragged && dragged.collectionId !== targetCollectionId) {
+					onMoveProjectToCollection(activeId, targetCollectionId);
 				}
 
 				const order = projects.map((project) => project.id);
@@ -1083,9 +1089,9 @@ export function useSidebarDnd({
 			projects,
 			projectIds,
 			projectsById,
-			folderIds,
+			collectionIds,
 			onReorderProjects,
-			onMoveProjectToFolder,
+			onMoveProjectToCollection,
 			normalizeMainFirst,
 			commitProjectToDb,
 			persistWorkspaceDrop,

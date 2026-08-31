@@ -15,34 +15,34 @@ import { useCallback, useEffect, useState } from "react";
 import { HiChevronRight } from "react-icons/hi2";
 import { LuEllipsis } from "react-icons/lu";
 import { RenameInput } from "renderer/screens/main/components/WorkspaceSidebar/RenameInput";
-import type { DashboardSidebarFolder } from "../../types";
-import { hasCustomColor } from "../../utils/folderColor";
-import { folderDropId } from "../../utils/folderDnd";
-import { isImageIcon } from "../../utils/folderIcon";
-import { FolderActionsMenuItems } from "./components/FolderActionsMenuItems";
+import type { DashboardSidebarCollection } from "../../types";
+import { hasCustomColor } from "../../utils/collectionColor";
+import { collectionDropId } from "../../utils/collectionDnd";
+import { isImageIcon } from "../../utils/collectionIcon";
+import { CollectionActionsMenuItems } from "./components/CollectionActionsMenuItems";
 
-interface DashboardSidebarFolderHeaderProps {
-	folder: DashboardSidebarFolder;
+interface DashboardSidebarCollectionHeaderProps {
+	collection: DashboardSidebarCollection;
 	projectCount: number;
-	/** Auto-enter rename mode (used right after the folder is created). */
+	/** Auto-enter rename mode (used right after the collection is created). */
 	autoRename?: boolean;
 	/** Called once an auto-initiated rename is committed or cancelled, so the
 	 * caller can clear its pending flag and not re-open rename on remount. */
 	onAutoRenameEnd?: () => void;
-	onToggleCollapse: (folderId: string) => void;
-	onRename: (folderId: string, name: string) => void;
-	onSetColor: (folderId: string, color: string | null) => void;
-	onSetIcon: (folderId: string, icon: string | null) => void;
-	onDelete: (folderId: string) => void;
+	onToggleCollapse: (collectionId: string) => void;
+	onRename: (collectionId: string, name: string) => void;
+	onSetColor: (collectionId: string, color: string | null) => void;
+	onSetIcon: (collectionId: string, icon: string | null) => void;
+	onDelete: (collectionId: string) => void;
 }
 
 /**
- * Header row for a sidebar folder — the grouping level above projects.
+ * Header row for a sidebar collection — the grouping level above projects.
  * Chevron collapse, icon or colour-dot identity, inline rename, and a hover
- * actions menu; the folder colour also tints the rail under its contents.
+ * actions menu; the collection colour also tints the rail under its contents.
  */
-export function DashboardSidebarFolderHeader({
-	folder,
+export function DashboardSidebarCollectionHeader({
+	collection,
 	projectCount,
 	autoRename = false,
 	onAutoRenameEnd,
@@ -51,45 +51,45 @@ export function DashboardSidebarFolderHeader({
 	onSetColor,
 	onSetIcon,
 	onDelete,
-}: DashboardSidebarFolderHeaderProps) {
+}: DashboardSidebarCollectionHeaderProps) {
 	const [isRenaming, setIsRenaming] = useState(autoRename);
-	const [renameValue, setRenameValue] = useState(folder.name);
+	const [renameValue, setRenameValue] = useState(collection.name);
 
 	useEffect(() => {
-		if (!isRenaming) setRenameValue(folder.name);
-	}, [folder.name, isRenaming]);
+		if (!isRenaming) setRenameValue(collection.name);
+	}, [collection.name, isRenaming]);
 
 	const startRename = useCallback(() => {
-		setRenameValue(folder.name);
+		setRenameValue(collection.name);
 		setIsRenaming(true);
-	}, [folder.name]);
+	}, [collection.name]);
 
 	const submitRename = useCallback(() => {
 		const trimmed = renameValue.trim();
-		if (trimmed) onRename(folder.id, trimmed);
+		if (trimmed) onRename(collection.id, trimmed);
 		setIsRenaming(false);
 		onAutoRenameEnd?.();
-	}, [folder.id, onRename, renameValue, onAutoRenameEnd]);
+	}, [collection.id, onRename, renameValue, onAutoRenameEnd]);
 
 	const cancelRename = useCallback(() => {
-		setRenameValue(folder.name);
+		setRenameValue(collection.name);
 		setIsRenaming(false);
 		onAutoRenameEnd?.();
-	}, [folder.name, onAutoRenameEnd]);
+	}, [collection.name, onAutoRenameEnd]);
 
-	// Dropping a dragged project on this header moves it into the folder.
+	// Dropping a dragged project on this header moves it into the collection.
 	const { setNodeRef: setDropRef, isOver } = useDroppable({
-		id: folderDropId(folder.id),
+		id: collectionDropId(collection.id),
 	});
 
 	const renderMenuItems = (kind: "context" | "dropdown") => (
-		<FolderActionsMenuItems
-			folder={folder}
+		<CollectionActionsMenuItems
+			collection={collection}
 			kind={kind}
 			onRename={startRename}
-			onSetColor={(color) => onSetColor(folder.id, color)}
-			onSetIcon={(icon) => onSetIcon(folder.id, icon)}
-			onDelete={() => onDelete(folder.id)}
+			onSetColor={(color) => onSetColor(collection.id, color)}
+			onSetIcon={(icon) => onSetIcon(collection.id, icon)}
+			onDelete={() => onDelete(collection.id)}
 		/>
 	);
 
@@ -98,7 +98,7 @@ export function DashboardSidebarFolderHeader({
 			<HiChevronRight
 				className={cn(
 					"size-3 text-muted-foreground transition-transform duration-150",
-					!folder.isCollapsed && "rotate-90",
+					!collection.isCollapsed && "rotate-90",
 				)}
 			/>
 		</div>
@@ -112,7 +112,7 @@ export function DashboardSidebarFolderHeader({
 					className={cn(
 						"group relative mx-2 flex min-h-7 items-center rounded-md py-1 pl-2 pr-2 text-[13px] font-semibold",
 						"text-muted-foreground transition-colors hover:bg-fill-hover",
-						// Highlight while a dragged project hovers this folder.
+						// Highlight while a dragged project hovers this collection.
 						isOver && "bg-fill-hover ring-1 ring-primary/50",
 					)}
 				>
@@ -133,36 +133,36 @@ export function DashboardSidebarFolderHeader({
 						 * the stretched ::before keeps the whole row clickable. */
 						<button
 							type="button"
-							aria-expanded={!folder.isCollapsed}
-							onClick={() => onToggleCollapse(folder.id)}
+							aria-expanded={!collection.isCollapsed}
+							onClick={() => onToggleCollapse(collection.id)}
 							className="flex min-w-0 flex-1 items-center text-left before:absolute before:inset-0 before:rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						>
 							{chevron}
 							<span className="flex min-w-0 flex-1 items-center gap-1.5">
 								{/* Icon when set (#1176), colour dot as the fallback identity. */}
-								{folder.icon ? (
-									isImageIcon(folder.icon) ? (
+								{collection.icon ? (
+									isImageIcon(collection.icon) ? (
 										<img
-											src={folder.icon}
+											src={collection.icon}
 											alt=""
 											className="size-3.5 shrink-0 rounded-sm object-cover"
 										/>
 									) : (
 										<span className="shrink-0 text-[13px] leading-none">
-											{folder.icon}
+											{collection.icon}
 										</span>
 									)
 								) : (
-									hasCustomColor(folder.color) && (
+									hasCustomColor(collection.color) && (
 										<span
 											className="size-2 shrink-0 rounded-full"
-											style={{ backgroundColor: folder.color ?? undefined }}
+											style={{ backgroundColor: collection.color ?? undefined }}
 										/>
 									)
 								)}
-								<span className="truncate">{folder.name}</span>
+								<span className="truncate">{collection.name}</span>
 								{/* Children are the count while expanded; only quantify when hidden. */}
-								{folder.isCollapsed && (
+								{collection.isCollapsed && (
 									<span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/50">
 										{projectCount}
 									</span>
@@ -182,7 +182,7 @@ export function DashboardSidebarFolderHeader({
 										variant="ghost"
 										size="icon"
 										className="size-5"
-										aria-label="Folder actions"
+										aria-label="Collection actions"
 									>
 										<LuEllipsis className="size-3.5" />
 									</Button>

@@ -8,35 +8,35 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
 import { LuFolderInput, LuFolderPlus, LuUngroup, LuX } from "react-icons/lu";
 import type {
-	DashboardSidebarFolder,
+	DashboardSidebarCollection,
 	DashboardSidebarProject,
 } from "../../../../types";
-import { hasCustomColor } from "../../../../utils/folderColor";
+import { hasCustomColor } from "../../../../utils/collectionColor";
 
 interface DashboardSidebarProjectBulkToolbarProps {
 	selectedProjects: DashboardSidebarProject[];
-	folders: DashboardSidebarFolder[];
+	collections: DashboardSidebarCollection[];
 	onClearSelection: () => void;
-	/** Move every selected project into a folder, or to the root when null. */
-	onMoveToFolder: (folderId: string | null) => void;
-	onCreateFolder: () => void;
+	/** Move every selected project into a collection, or to the root when null. */
+	onMoveToCollection: (collectionId: string | null) => void;
+	onCreateCollection: () => void;
 }
 
 /**
- * Replaces the PROJECTS header while projects are bulk-selected — the folder
+ * Replaces the PROJECTS header while projects are bulk-selected — the collection
  * counterpart of the workspace bulk toolbar above it in the tree.
  */
 export function DashboardSidebarProjectBulkToolbar({
 	selectedProjects,
-	folders,
+	collections,
 	onClearSelection,
-	onMoveToFolder,
-	onCreateFolder,
+	onMoveToCollection,
+	onCreateCollection,
 }: DashboardSidebarProjectBulkToolbarProps) {
 	const count = selectedProjects.length;
 	const noun = count === 1 ? "project" : "projects";
-	const anyInFolder = selectedProjects.some(
-		(project) => project.folderId !== null,
+	const anyInCollection = selectedProjects.some(
+		(project) => project.collectionId !== null,
 	);
 
 	return (
@@ -72,34 +72,34 @@ export function DashboardSidebarProjectBulkToolbar({
 							<button
 								type="button"
 								className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-fill-hover hover:text-foreground"
-								aria-label={`Move ${count} selected ${noun} to a folder`}
+								aria-label={`Move ${count} selected ${noun} to a collection`}
 							>
 								<LuFolderInput className="size-3.5" />
 							</button>
 						</DropdownMenuTrigger>
 					</TooltipTrigger>
-					<TooltipContent side="bottom">Move to folder</TooltipContent>
+					<TooltipContent side="bottom">Move to collection</TooltipContent>
 				</Tooltip>
 				<DropdownMenuContent align="end" side="bottom" className="w-48">
-					<DropdownMenuItem onSelect={onCreateFolder}>
+					<DropdownMenuItem onSelect={onCreateCollection}>
 						<LuFolderPlus className="size-4" />
-						New folder
+						New collection
 					</DropdownMenuItem>
-					{folders.length > 0 && <DropdownMenuSeparator />}
-					{folders.map((folder) => (
+					{collections.length > 0 && <DropdownMenuSeparator />}
+					{collections.map((collection) => (
 						<DropdownMenuItem
-							key={folder.id}
-							onSelect={() => onMoveToFolder(folder.id)}
+							key={collection.id}
+							onSelect={() => onMoveToCollection(collection.id)}
 						>
 							<span
 								className="size-2 shrink-0 rounded-full bg-muted-foreground/40"
 								style={
-									hasCustomColor(folder.color)
-										? { backgroundColor: folder.color ?? undefined }
+									hasCustomColor(collection.color)
+										? { backgroundColor: collection.color ?? undefined }
 										: undefined
 								}
 							/>
-							<span className="truncate">{folder.name}</span>
+							<span className="truncate">{collection.name}</span>
 						</DropdownMenuItem>
 					))}
 				</DropdownMenuContent>
@@ -109,15 +109,15 @@ export function DashboardSidebarProjectBulkToolbar({
 				<TooltipTrigger asChild>
 					<button
 						type="button"
-						disabled={!anyInFolder}
-						onClick={() => onMoveToFolder(null)}
+						disabled={!anyInCollection}
+						onClick={() => onMoveToCollection(null)}
 						className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-fill-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-35"
-						aria-label="Remove selected projects from their folders"
+						aria-label="Remove selected projects from their collections"
 					>
 						<LuUngroup className="size-3.5" />
 					</button>
 				</TooltipTrigger>
-				<TooltipContent side="bottom">Remove from folder</TooltipContent>
+				<TooltipContent side="bottom">Remove from collection</TooltipContent>
 			</Tooltip>
 		</div>
 	);

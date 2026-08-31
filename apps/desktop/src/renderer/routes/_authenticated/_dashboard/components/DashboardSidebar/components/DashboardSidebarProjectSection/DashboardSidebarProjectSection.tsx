@@ -7,7 +7,7 @@ import { useMemo } from "react";
 import type { WorkspaceSelectionEvent } from "../../providers/DashboardSidebarSelectionProvider";
 import type { DashboardSidebarProject } from "../../types";
 import { getProjectChildrenWorkspaces } from "../../utils/projectChildren";
-import { useDashboardSidebarFolders } from "../DashboardSidebarFolderContext";
+import { useDashboardSidebarCollections } from "../DashboardSidebarCollectionContext";
 import { DashboardSidebarCollapsedProjectContent } from "./components/DashboardSidebarCollapsedProjectContent";
 import { DashboardSidebarExpandedProjectContent } from "./components/DashboardSidebarExpandedProjectContent";
 import { DashboardSidebarProjectContextMenu } from "./components/DashboardSidebarProjectContextMenu";
@@ -70,8 +70,8 @@ export function DashboardSidebarProjectSection({
 		project,
 	});
 
-	const { folders, moveProjectToFolder, createFolderForProject } =
-		useDashboardSidebarFolders();
+	const { collections, moveProjectToCollection, createCollectionForProject } =
+		useDashboardSidebarCollections();
 
 	const totalWorkspaceCount = flattenedCollapsedWorkspaces.length;
 
@@ -98,10 +98,14 @@ export function DashboardSidebarProjectSection({
 				onOpenSettings={handleOpenSettings}
 				onRemoveFromSidebar={confirmRemoveFromSidebar}
 				onRename={startRename}
-				folders={folders}
-				currentFolderId={project.folderId}
-				onMoveToFolder={(folderId) => moveProjectToFolder(project.id, folderId)}
-				onCreateFolderWithProject={() => createFolderForProject(project.id)}
+				collections={collections}
+				currentCollectionId={project.collectionId}
+				onMoveToCollection={(collectionId) =>
+					moveProjectToCollection(project.id, collectionId)
+				}
+				onCreateCollectionWithProject={() =>
+					createCollectionForProject(project.id)
+				}
 			>
 				<div className="mt-1 first:mt-0">
 					<DashboardSidebarCollapsedProjectContent
@@ -131,10 +135,14 @@ export function DashboardSidebarProjectSection({
 				onOpenSettings={handleOpenSettings}
 				onRemoveFromSidebar={confirmRemoveFromSidebar}
 				onRename={startRename}
-				folders={folders}
-				currentFolderId={project.folderId}
-				onMoveToFolder={(folderId) => moveProjectToFolder(project.id, folderId)}
-				onCreateFolderWithProject={() => createFolderForProject(project.id)}
+				collections={collections}
+				currentCollectionId={project.collectionId}
+				onMoveToCollection={(collectionId) =>
+					moveProjectToCollection(project.id, collectionId)
+				}
+				onCreateCollectionWithProject={() =>
+					createCollectionForProject(project.id)
+				}
 			>
 				<DashboardSidebarProjectRow
 					projectName={project.name}

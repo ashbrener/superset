@@ -13,7 +13,7 @@ import {
 	useSidebarDnd,
 } from "../../hooks/useSidebarDnd";
 import type {
-	DashboardSidebarFolder,
+	DashboardSidebarCollection,
 	DashboardSidebarPinnedWorkspace,
 	DashboardSidebarProject,
 	DashboardSidebarWorkspace,
@@ -29,8 +29,11 @@ interface DashboardSidebarDndProviderProps {
 	workspaceShortcutLabels: Map<string, string>;
 	onReorderProjects: (projectIds: string[]) => void;
 	/** Folders projects can be dropped into. Empty when none exist. */
-	folders: DashboardSidebarFolder[];
-	onMoveProjectToFolder: (projectId: string, folderId: string | null) => void;
+	collections: DashboardSidebarCollection[];
+	onMoveProjectToCollection: (
+		projectId: string,
+		collectionId: string | null,
+	) => void;
 	children: ReactNode;
 }
 
@@ -47,8 +50,8 @@ export function DashboardSidebarDndProvider({
 	isSidebarCollapsed,
 	workspaceShortcutLabels,
 	onReorderProjects,
-	folders,
-	onMoveProjectToFolder,
+	collections,
+	onMoveProjectToCollection,
 	children,
 }: DashboardSidebarDndProviderProps) {
 	const {
@@ -64,8 +67,8 @@ export function DashboardSidebarDndProvider({
 		pinnedWorkspaces,
 		sessionWorkspaces,
 		onReorderProjects,
-		folders,
-		onMoveProjectToFolder,
+		collections,
+		onMoveProjectToCollection,
 	});
 
 	// Dragging sweeps the pointer across rows, which would otherwise drive the

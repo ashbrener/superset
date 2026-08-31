@@ -23,18 +23,18 @@ import {
 	LuX,
 } from "react-icons/lu";
 import { electronTrpc } from "renderer/lib/electron-trpc";
-import type { DashboardSidebarFolder } from "../../../../types";
+import type { DashboardSidebarCollection } from "../../../../types";
 import {
-	FOLDER_ICON_EMOJI,
+	COLLECTION_ICON_EMOJI,
 	shrinkIconDataUrl,
-} from "../../../../utils/folderIcon";
+} from "../../../../utils/collectionIcon";
 import { ColorMenuItems } from "../../../ColorMenuItems";
 
-export type FolderActionsMenuKind = "context" | "dropdown";
+export type CollectionActionsMenuKind = "context" | "dropdown";
 
-interface FolderActionsMenuItemsProps {
-	folder: DashboardSidebarFolder;
-	kind: FolderActionsMenuKind;
+interface CollectionActionsMenuItemsProps {
+	collection: DashboardSidebarCollection;
+	kind: CollectionActionsMenuKind;
 	onRename: () => void;
 	onSetColor: (color: string | null) => void;
 	onSetIcon: (icon: string | null) => void;
@@ -42,18 +42,18 @@ interface FolderActionsMenuItemsProps {
 }
 
 /**
- * The folder actions shared by the right-click ContextMenu and the hover "..."
- * DropdownMenu — the folder counterpart of SectionActionsMenuItems one level
+ * The collection actions shared by the right-click ContextMenu and the hover "..."
+ * DropdownMenu — the collection counterpart of SectionActionsMenuItems one level
  * down.
  */
-export function FolderActionsMenuItems({
-	folder,
+export function CollectionActionsMenuItems({
+	collection,
 	kind,
 	onRename,
 	onSetColor,
 	onSetIcon,
 	onDelete,
-}: FolderActionsMenuItemsProps) {
+}: CollectionActionsMenuItemsProps) {
 	const Item = kind === "context" ? ContextMenuItem : DropdownMenuItem;
 	const Separator =
 		kind === "context" ? ContextMenuSeparator : DropdownMenuSeparator;
@@ -66,7 +66,7 @@ export function FolderActionsMenuItems({
 
 	const selectImageFile = electronTrpc.window.selectImageFile.useMutation();
 
-	// A picked file is re-encoded small before it goes in the store: folder
+	// A picked file is re-encoded small before it goes in the store: collection
 	// rows share the sidebar's local quota with everything else in it.
 	const chooseImageIcon = async () => {
 		try {
@@ -84,17 +84,17 @@ export function FolderActionsMenuItems({
 		<>
 			<Item onSelect={onRename}>
 				<LuPencil className={iconClassName} />
-				Rename folder
+				Rename collection
 			</Item>
 			<Sub>
 				<SubTrigger>
 					<LuPalette className={iconClassName} />
-					Set folder color
+					Set collection color
 				</SubTrigger>
 				<SubContent className="max-h-80 w-40 overflow-y-auto">
 					<ColorMenuItems
 						kind={kind}
-						color={folder.color}
+						color={collection.color}
 						onSelect={onSetColor}
 					/>
 				</SubContent>
@@ -102,20 +102,20 @@ export function FolderActionsMenuItems({
 			<Sub>
 				<SubTrigger>
 					<LuSmile className={iconClassName} />
-					Set folder icon
+					Set collection icon
 				</SubTrigger>
 				<SubContent className="w-56">
 					{/* Menu items, not plain buttons, so the grid stays on the menu's
 					 * roving focus and arrow keys reach every emoji. */}
 					<div className="grid grid-cols-8 gap-0.5 p-1">
-						{FOLDER_ICON_EMOJI.map((emoji) => (
+						{COLLECTION_ICON_EMOJI.map((emoji) => (
 							<Item
 								key={emoji}
-								aria-label={`Use ${emoji} as the folder icon`}
+								aria-label={`Use ${emoji} as the collection icon`}
 								onSelect={() => onSetIcon(emoji)}
 								className={cn(
 									"size-6 justify-center p-0 text-base",
-									folder.icon === emoji && "bg-fill-selected",
+									collection.icon === emoji && "bg-fill-selected",
 								)}
 							>
 								{emoji}
@@ -127,7 +127,7 @@ export function FolderActionsMenuItems({
 						<LuImage className={iconClassName} />
 						Choose image…
 					</Item>
-					{folder.icon && (
+					{collection.icon && (
 						<Item onSelect={() => onSetIcon(null)}>
 							<LuX className={iconClassName} />
 							Remove icon
@@ -138,7 +138,7 @@ export function FolderActionsMenuItems({
 			<Separator />
 			<Item variant="destructive" onSelect={onDelete}>
 				<LuTrash2 className={iconClassName} />
-				Delete folder
+				Delete collection
 			</Item>
 		</>
 	);

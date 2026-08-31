@@ -25,11 +25,11 @@ import {
 import { DashboardSidebarSectionHeader } from "../DashboardSidebarSectionHeader";
 
 interface DashboardSidebarWorkspacesHeaderProps {
-	onNewFolder: () => void;
+	onNewCollection: () => void;
 }
 
 export function DashboardSidebarWorkspacesHeader({
-	onNewFolder,
+	onNewCollection,
 }: DashboardSidebarWorkspacesHeaderProps) {
 	const { t } = useLingui();
 	const openEmptyProject = useOpenEmptyProjectModal();
@@ -148,10 +148,10 @@ export function DashboardSidebarWorkspacesHeader({
 					</DropdownMenuItem>
 					<DropdownMenuSeparator />
 					{/* Sits directly under "Create new project", which also carries a
-					    folder icon — so name the level and use the project-folder icon. */}
-					<DropdownMenuItem onSelect={onNewFolder}>
+					    collection icon — so name the level and use the project-collection icon. */}
+					<DropdownMenuItem onSelect={onNewCollection}>
 						<LuFolders className="size-4" />
-						New project folder
+						New project collection
 					</DropdownMenuItem>
 				</DropdownMenuContent>
 			</DropdownMenu>

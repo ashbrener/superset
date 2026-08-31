@@ -28,7 +28,7 @@ export interface SidebarProjectInput {
 	updatedAt: Date;
 	isCollapsed: boolean;
 	/** Folder this project sits in, or null when it sits at the sidebar root. */
-	folderId: string | null;
+	collectionId: string | null;
 }
 
 export interface SidebarSectionInput {

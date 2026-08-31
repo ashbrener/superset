@@ -1,16 +1,16 @@
 /**
- * A folder icon is one string: either an emoji, or a `data:` URL holding a
- * small image (a client's logo, say). Both are stored inline because folders
+ * A collection icon is one string: either an emoji, or a `data:` URL holding a
+ * small image (a client's logo, say). Both are stored inline because collections
  * are client-local rows — there is no server row to hang an upload off, and a
  * `file://` path wouldn't render under the renderer's CSP, which allows
  * `data:` images but not local files.
  */
 
 /** Longest side of a stored image icon, in CSS pixels. */
-export const FOLDER_ICON_SIZE = 64;
+export const COLLECTION_ICON_SIZE = 64;
 
 /** Emoji offered in the picker — shapes that suit client/work/personal groups. */
-export const FOLDER_ICON_EMOJI = [
+export const COLLECTION_ICON_EMOJI = [
 	"💼",
 	"🏢",
 	"🏠",
@@ -34,13 +34,13 @@ export function isImageIcon(icon: string | null | undefined): boolean {
 }
 
 /**
- * Re-encodes a picked image down to `FOLDER_ICON_SIZE` as PNG. Icons live in
+ * Re-encodes a picked image down to `COLLECTION_ICON_SIZE` as PNG. Icons live in
  * the sidebar's local store, so a full-size photo would eat the quota the rest
  * of the sidebar shares; a 64px PNG costs a few KB.
  */
 export async function shrinkIconDataUrl(
 	dataUrl: string,
-	size: number = FOLDER_ICON_SIZE,
+	size: number = COLLECTION_ICON_SIZE,
 ): Promise<string> {
 	const image = new Image();
 	await new Promise<void>((resolve, reject) => {

@@ -21,8 +21,8 @@ import {
 	LuX,
 } from "react-icons/lu";
 import { useV2UserPreferences } from "renderer/hooks/useV2UserPreferences";
-import type { DashboardSidebarFolder } from "../../../../types";
-import { hasCustomColor } from "../../../../utils/folderColor";
+import type { DashboardSidebarCollection } from "../../../../types";
+import { hasCustomColor } from "../../../../utils/collectionColor";
 
 interface DashboardSidebarProjectContextMenuProps {
 	projectId: string;
@@ -33,11 +33,11 @@ interface DashboardSidebarProjectContextMenuProps {
 	onRemoveFromSidebar: () => void;
 	onRename: () => void;
 	/** Folders available to move this project into. */
-	folders: DashboardSidebarFolder[];
+	collections: DashboardSidebarCollection[];
 	/** Folder the project currently sits in, or null when at the root. */
-	currentFolderId: string | null;
-	onMoveToFolder: (folderId: string | null) => void;
-	onCreateFolderWithProject: () => void;
+	currentCollectionId: string | null;
+	onMoveToCollection: (collectionId: string | null) => void;
+	onCreateCollectionWithProject: () => void;
 	children: React.ReactNode;
 }
 
@@ -49,10 +49,10 @@ export function DashboardSidebarProjectContextMenu({
 	onOpenSettings,
 	onRemoveFromSidebar,
 	onRename,
-	folders,
-	currentFolderId,
-	onMoveToFolder,
-	onCreateFolderWithProject,
+	collections,
+	currentCollectionId,
+	onMoveToCollection,
+	onCreateCollectionWithProject,
 	children,
 }: DashboardSidebarProjectContextMenuProps) {
 	const { preferences, setTagFolderHidden } = useV2UserPreferences();
@@ -78,7 +78,7 @@ export function DashboardSidebarProjectContextMenu({
 						Project Settings
 					</Trans>
 				</ContextMenuItem>
-				{/* "workspace group" and "folder" sit two items apart here, so both
+				{/* "workspace group" and "collection" sit two items apart here, so both
 				    labels name the level they act on. LuFolderPlus is the workspace
 				    level, LuFolders the project level. */}
 				<ContextMenuItem onSelect={onCreateSection}>
@@ -90,7 +90,7 @@ export function DashboardSidebarProjectContextMenu({
 						<ContextMenuSubTrigger>
 							<LuEye className="size-4 mr-2" />
 							<Trans id="dashboard.sidebar.projectMenu.hiddenFolders">
-								Hidden folders
+								Hidden collections
 							</Trans>
 						</ContextMenuSubTrigger>
 						<ContextMenuSubContent className="w-48 max-h-80 overflow-y-auto">
@@ -115,47 +115,47 @@ export function DashboardSidebarProjectContextMenu({
 				<ContextMenuSub>
 					<ContextMenuSubTrigger>
 						<LuFolders className="size-4 mr-2" />
-						<Trans id="dashboard.sidebar.projectMenu.moveToFolder">
-							Move to folder
+						<Trans id="dashboard.sidebar.projectMenu.moveToCollection">
+							Move to collection
 						</Trans>
 					</ContextMenuSubTrigger>
 					<ContextMenuSubContent className="max-h-80 w-48 overflow-y-auto">
-						<ContextMenuItem onSelect={onCreateFolderWithProject}>
+						<ContextMenuItem onSelect={onCreateCollectionWithProject}>
 							<LuFolders className="size-4 mr-2" />
-							<Trans id="dashboard.sidebar.projectMenu.newFolder">
-								New folder…
+							<Trans id="dashboard.sidebar.projectMenu.newCollection">
+								New collection…
 							</Trans>
 						</ContextMenuItem>
-						{folders.length > 0 && <ContextMenuSeparator />}
-						{folders.map((folder) => {
-							const hasColor = hasCustomColor(folder.color);
+						{collections.length > 0 && <ContextMenuSeparator />}
+						{collections.map((collection) => {
+							const hasColor = hasCustomColor(collection.color);
 							return (
 								<ContextMenuItem
-									key={folder.id}
-									onSelect={() => onMoveToFolder(folder.id)}
+									key={collection.id}
+									onSelect={() => onMoveToCollection(collection.id)}
 								>
 									<span
 										className="mr-2 size-3 shrink-0 rounded-full border border-border"
 										style={{
 											backgroundColor: hasColor
-												? (folder.color ?? undefined)
+												? (collection.color ?? undefined)
 												: "transparent",
 										}}
 									/>
-									<span className="flex-1 truncate">{folder.name}</span>
-									{currentFolderId === folder.id && (
+									<span className="flex-1 truncate">{collection.name}</span>
+									{currentCollectionId === collection.id && (
 										<HiCheck className="size-4 text-primary" />
 									)}
 								</ContextMenuItem>
 							);
 						})}
-						{currentFolderId !== null && (
+						{currentCollectionId !== null && (
 							<>
 								<ContextMenuSeparator />
-								<ContextMenuItem onSelect={() => onMoveToFolder(null)}>
+								<ContextMenuItem onSelect={() => onMoveToCollection(null)}>
 									<LuX className="size-4 mr-2" />
-									<Trans id="dashboard.sidebar.projectMenu.removeFromFolder">
-										Remove from folder
+									<Trans id="dashboard.sidebar.projectMenu.removeFromCollection">
+										Remove from collection
 									</Trans>
 								</ContextMenuItem>
 							</>

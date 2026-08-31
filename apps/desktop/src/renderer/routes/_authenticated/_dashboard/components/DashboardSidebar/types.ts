@@ -91,17 +91,17 @@ export interface DashboardSidebarProject {
 	createdAt: Date;
 	updatedAt: Date;
 	isCollapsed: boolean;
-	/** Folder this project sits in, or null when it sits at the sidebar root. */
-	folderId: string | null;
+	/** Collection this project sits in, or null when it sits at the sidebar root. */
+	collectionId: string | null;
 	children: DashboardSidebarProjectChild[];
 }
 
 /**
- * A folder groups PROJECTS at the sidebar root — the level above projects.
- * Named "folder" to stay distinct from a "group" (a section of workspaces
+ * A collection groups PROJECTS at the sidebar root — the level above projects.
+ * Named "collection" to stay distinct from a "group" (a section of workspaces
  * inside a single project).
  */
-export interface DashboardSidebarFolder {
+export interface DashboardSidebarCollection {
 	id: string;
 	name: string;
 	isCollapsed: boolean;

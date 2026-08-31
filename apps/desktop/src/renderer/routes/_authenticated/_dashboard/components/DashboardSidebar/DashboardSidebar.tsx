@@ -23,10 +23,11 @@ import { OrganizationDropdown } from "renderer/routes/_authenticated/_dashboard/
 import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { useSidebarSectionsCollapseStore } from "renderer/stores/sidebar-sections-collapse";
+import { CollectionContents } from "./components/CollectionContents";
 import { DashboardSidebarBulkActions } from "./components/DashboardSidebarBulkActions";
 import { DashboardSidebarCloudSection } from "./components/DashboardSidebarCloudSection";
-import { DashboardSidebarFolderProvider } from "./components/DashboardSidebarFolderContext";
-import { DashboardSidebarFolderHeader } from "./components/DashboardSidebarFolderHeader";
+import { DashboardSidebarCollectionProvider } from "./components/DashboardSidebarCollectionContext";
+import { DashboardSidebarCollectionHeader } from "./components/DashboardSidebarCollectionHeader";
 import { DashboardSidebarHeader } from "./components/DashboardSidebarHeader";
 import { DashboardSidebarHoverCardOverlay } from "./components/DashboardSidebarHoverCardOverlay";
 import { DashboardSidebarPinnedSection } from "./components/DashboardSidebarPinnedSection";
@@ -34,7 +35,6 @@ import { DashboardSidebarProjectSection } from "./components/DashboardSidebarPro
 import { DashboardSidebarSectionRenameProvider } from "./components/DashboardSidebarSectionRenameContext";
 import { DashboardSidebarSessionsSection } from "./components/DashboardSidebarSessionsSection";
 import { DashboardSidebarWorkspacesHeader } from "./components/DashboardSidebarWorkspacesHeader";
-import { FolderContents } from "./components/FolderContents";
 import { RootDropZone } from "./components/RootDropZone";
 import { SectionDragSpacer } from "./components/SectionDragSpacer";
 import { useV2SetupScriptCard } from "./components/V2SetupScriptCard";
@@ -57,7 +57,7 @@ import type {
 	DashboardSidebarProject,
 	DashboardSidebarWorkspace,
 } from "./types";
-import { groupProjectsByFolder } from "./utils/groupProjectsByFolder";
+import { groupProjectsByCollection } from "./utils/groupProjectsByCollection";
 import { getProjectChildrenWorkspaces } from "./utils/projectChildren";
 
 interface DashboardSidebarProps {
@@ -150,7 +150,7 @@ export function DashboardSidebar({
 	const { t } = useLingui();
 	const {
 		groups,
-		folders,
+		collections,
 		pinnedWorkspaces,
 		sessionWorkspaces,
 		refreshWorkspacePullRequest,
@@ -158,15 +158,15 @@ export function DashboardSidebar({
 	} = useDashboardSidebarData();
 	const {
 		reorderProjects,
-		createFolder,
-		deleteFolder,
-		moveProjectToFolder,
-		renameFolder,
-		setFolderColor,
-		setFolderIcon,
-		toggleFolderCollapsed,
+		createCollection,
+		deleteCollection,
+		moveProjectToCollection,
+		renameCollection,
+		setCollectionColor,
+		setCollectionIcon,
+		toggleCollectionCollapsed,
 	} = useDashboardSidebarState();
-	// Converts legacy uuid-keyed folders to tag-backed folders in the
+	// Converts legacy uuid-keyed collections to tag-backed collections in the
 	// background; retries whenever the workspace cache changes.
 	useMigrateLegacySidebarFolders();
 	const navigate = useNavigate();
@@ -180,47 +180,47 @@ export function DashboardSidebar({
 		(s) => s.collapsed.workspaces,
 	);
 
-	// Folder created from a project's context menu enters rename mode on mount.
-	const [autoRenameFolderId, setAutoRenameFolderId] = useState<string | null>(
-		null,
-	);
+	// Collection created from a project's context menu enters rename mode on mount.
+	const [autoRenameCollectionId, setAutoRenameCollectionId] = useState<
+		string | null
+	>(null);
 
-	const createFolderForProjects = useCallback(
+	const createCollectionForProjects = useCallback(
 		(projectIds: string[]) => {
 			if (projectIds.length === 0) return;
-			const folderId = createFolder();
+			const collectionId = createCollection();
 			for (const projectId of projectIds) {
-				moveProjectToFolder(projectId, folderId);
+				moveProjectToCollection(projectId, collectionId);
 			}
-			setAutoRenameFolderId(folderId);
+			setAutoRenameCollectionId(collectionId);
 		},
-		[createFolder, moveProjectToFolder],
+		[createCollection, moveProjectToCollection],
 	);
 
-	const createFolderForProject = useCallback(
-		(projectId: string) => createFolderForProjects([projectId]),
-		[createFolderForProjects],
+	const createCollectionForProject = useCallback(
+		(projectId: string) => createCollectionForProjects([projectId]),
+		[createCollectionForProjects],
 	);
 
-	// "New project folder" from the PROJECTS header: create an empty folder and
+	// "New project collection" from the PROJECTS header: create an empty collection and
 	// drop straight into rename, so it can be created before any project exists.
-	const handleNewFolder = useCallback(() => {
-		const folderId = createFolder();
-		setAutoRenameFolderId(folderId);
-	}, [createFolder]);
+	const handleNewCollection = useCallback(() => {
+		const collectionId = createCollection();
+		setAutoRenameCollectionId(collectionId);
+	}, [createCollection]);
 
-	const folderContextValue = useMemo(
+	const collectionContextValue = useMemo(
 		() => ({
-			folders,
-			moveProjectToFolder,
-			createFolderForProject,
-			createFolderForProjects,
+			collections,
+			moveProjectToCollection,
+			createCollectionForProject,
+			createCollectionForProjects,
 		}),
 		[
-			folders,
-			moveProjectToFolder,
-			createFolderForProject,
-			createFolderForProjects,
+			collections,
+			moveProjectToCollection,
+			createCollectionForProject,
+			createCollectionForProjects,
 		],
 	);
 
@@ -239,25 +239,25 @@ export function DashboardSidebar({
 			.filter((g): g is DashboardSidebarProject => g != null);
 	}, [groups, projectOrder]);
 
-	const { foldersWithProjects, ungroupedProjects } = useMemo(
-		() => groupProjectsByFolder(folders, orderedGroups),
-		[folders, orderedGroups],
+	const { collectionsWithProjects, ungroupedProjects } = useMemo(
+		() => groupProjectsByCollection(collections, orderedGroups),
+		[collections, orderedGroups],
 	);
 
 	// dnd-kit requires the SortableContext item order to match the rendered
-	// order, so build it exactly as the list below renders: each folder's
-	// projects (skipped while that folder is collapsed and therefore not
+	// order, so build it exactly as the list below renders: each collection's
+	// projects (skipped while that collection is collapsed and therefore not
 	// mounted), then the ungrouped ones.
 	const sortableProjectIds = useMemo(
 		() => [
-			...foldersWithProjects.flatMap(({ folder, projects }) =>
-				isCollapsed || !folder.isCollapsed
+			...collectionsWithProjects.flatMap(({ collection, projects }) =>
+				isCollapsed || !collection.isCollapsed
 					? projects.map((project) => project.id)
 					: [],
 			),
 			...ungroupedProjects.map((project) => project.id),
 		],
-		[foldersWithProjects, ungroupedProjects, isCollapsed],
+		[collectionsWithProjects, ungroupedProjects, isCollapsed],
 	);
 
 	const workspaceShortcutLabels = useDashboardSidebarShortcuts(
@@ -363,7 +363,7 @@ export function DashboardSidebar({
 			availableWorkspaceIds={selectableWorkspaceIds}
 			orderedProjectIds={sortableProjectIds}
 		>
-			<DashboardSidebarFolderProvider value={folderContextValue}>
+			<DashboardSidebarCollectionProvider value={collectionContextValue}>
 				<DashboardSidebarSectionRenameProvider>
 					<DashboardSidebarHoverProvider>
 						<DashboardSidebarWorkspaceStatusProvider
@@ -380,8 +380,8 @@ export function DashboardSidebar({
 									isSidebarCollapsed={isCollapsed}
 									workspaceShortcutLabels={workspaceShortcutLabels}
 									onReorderProjects={handleReorderProjects}
-									folders={folders}
-									onMoveProjectToFolder={moveProjectToFolder}
+									collections={collections}
+									onMoveProjectToCollection={moveProjectToCollection}
 								>
 									<div className="flex h-full flex-col border-r border-border bg-sidebar dark:bg-muted/35">
 										<DashboardSidebarHeader isCollapsed={isCollapsed} />
@@ -411,7 +411,7 @@ export function DashboardSidebar({
 												<div className="mt-3 first:mt-0">
 													<DashboardSidebarBulkActions projects={orderedGroups}>
 														<DashboardSidebarWorkspacesHeader
-															onNewFolder={handleNewFolder}
+															onNewCollection={handleNewCollection}
 														/>
 													</DashboardSidebarBulkActions>
 												</div>
@@ -421,46 +421,55 @@ export function DashboardSidebar({
 													items={sortableProjectIds}
 													strategy={verticalListSortingStrategy}
 												>
-													{foldersWithProjects.map(({ folder, projects }) => (
-														<div key={folder.id} className="mt-1 first:mt-0">
-															{!isCollapsed && (
-																<DashboardSidebarFolderHeader
-																	folder={folder}
-																	projectCount={projects.length}
-																	autoRename={autoRenameFolderId === folder.id}
-																	onAutoRenameEnd={() =>
-																		setAutoRenameFolderId(null)
-																	}
-																	onToggleCollapse={toggleFolderCollapsed}
-																	onRename={renameFolder}
-																	onSetColor={setFolderColor}
-																	onSetIcon={setFolderIcon}
-																	onDelete={deleteFolder}
-																/>
-															)}
-															{(isCollapsed || !folder.isCollapsed) && (
-																<FolderContents
-																	folder={folder}
-																	isSidebarCollapsed={isCollapsed}
-																>
-																	{projects.map((project) => (
-																		<SortableProjectWrapper
-																			key={project.id}
-																			project={project}
-																			isCollapsed={isCollapsed}
-																			workspaceShortcutLabels={
-																				workspaceShortcutLabels
-																			}
-																			onWorkspaceHover={
-																				refreshWorkspacePullRequest
-																			}
-																			onToggleCollapse={toggleProjectCollapsed}
-																		/>
-																	))}
-																</FolderContents>
-															)}
-														</div>
-													))}
+													{collectionsWithProjects.map(
+														({ collection, projects }) => (
+															<div
+																key={collection.id}
+																className="mt-1 first:mt-0"
+															>
+																{!isCollapsed && (
+																	<DashboardSidebarCollectionHeader
+																		collection={collection}
+																		projectCount={projects.length}
+																		autoRename={
+																			autoRenameCollectionId === collection.id
+																		}
+																		onAutoRenameEnd={() =>
+																			setAutoRenameCollectionId(null)
+																		}
+																		onToggleCollapse={toggleCollectionCollapsed}
+																		onRename={renameCollection}
+																		onSetColor={setCollectionColor}
+																		onSetIcon={setCollectionIcon}
+																		onDelete={deleteCollection}
+																	/>
+																)}
+																{(isCollapsed || !collection.isCollapsed) && (
+																	<CollectionContents
+																		collection={collection}
+																		isSidebarCollapsed={isCollapsed}
+																	>
+																		{projects.map((project) => (
+																			<SortableProjectWrapper
+																				key={project.id}
+																				project={project}
+																				isCollapsed={isCollapsed}
+																				workspaceShortcutLabels={
+																					workspaceShortcutLabels
+																				}
+																				onWorkspaceHover={
+																					refreshWorkspacePullRequest
+																				}
+																				onToggleCollapse={
+																					toggleProjectCollapsed
+																				}
+																			/>
+																		))}
+																	</CollectionContents>
+																)}
+															</div>
+														),
+													)}
 													<RootDropZone>
 														{ungroupedProjects.map((project) => (
 															<SortableProjectWrapper
@@ -544,7 +553,7 @@ export function DashboardSidebar({
 						</DashboardSidebarWorkspaceStatusProvider>
 					</DashboardSidebarHoverProvider>
 				</DashboardSidebarSectionRenameProvider>
-			</DashboardSidebarFolderProvider>
+			</DashboardSidebarCollectionProvider>
 		</DashboardSidebarSelectionProvider>
 	);
 }

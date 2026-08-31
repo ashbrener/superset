@@ -12,10 +12,10 @@ import type { inferRouterOutputs } from "@trpc/server";
 import { reclaimTerminalStateForQuota } from "renderer/lib/terminal/terminal-buffer-gc";
 import type { z } from "zod";
 import {
-	type DashboardSidebarFolderRow,
+	type DashboardSidebarCollectionRow,
 	type DashboardSidebarProjectRow,
 	type DashboardSidebarSectionRow,
-	dashboardSidebarFolderSchema,
+	dashboardSidebarCollectionSchema,
 	dashboardSidebarProjectSchema,
 	dashboardSidebarSectionSchema,
 	type FailedWorkspaceCreateRow,
@@ -92,12 +92,12 @@ export interface OrgCollections {
 		typeof dashboardSidebarProjectSchema,
 		z.input<typeof dashboardSidebarProjectSchema>
 	>;
-	v2SidebarFolders: Collection<
-		DashboardSidebarFolderRow,
+	v2SidebarCollections: Collection<
+		DashboardSidebarCollectionRow,
 		string,
 		LocalStorageCollectionUtils,
-		typeof dashboardSidebarFolderSchema,
-		z.input<typeof dashboardSidebarFolderSchema>
+		typeof dashboardSidebarCollectionSchema,
+		z.input<typeof dashboardSidebarCollectionSchema>
 	>;
 	v2WorkspaceLocalState: Collection<
 		WorkspaceLocalStateRow,
@@ -165,23 +165,26 @@ function createOrgCollections(organizationId: string): OrgCollections {
 		basicIndexConfig,
 	);
 	v2SidebarProjects.createIndex(
-		(sidebarProject) => sidebarProject.folderId,
+		(sidebarProject) => sidebarProject.collectionId,
 		basicIndexConfig,
 	);
 
-	const v2SidebarFolders = createIndexedCollection(
+	const v2SidebarCollections = createIndexedCollection(
 		localStorageCollectionOptions(
 			hardenLocalCollection({
-				id: `v2_sidebar_folders-${organizationId}`,
-				storageKey: `v2-sidebar-folders-${organizationId}`,
-				schema: dashboardSidebarFolderSchema,
+				id: `v2_sidebar_collections-${organizationId}`,
+				storageKey: `v2-sidebar-collections-${organizationId}`,
+				schema: dashboardSidebarCollectionSchema,
 				// Explicit type for the same reason the sibling collections need
 				// one: a passthrough generic drops the contextual typing.
-				getKey: (item: DashboardSidebarFolderRow) => item.folderId,
+				getKey: (item: DashboardSidebarCollectionRow) => item.collectionId,
 			}),
 		),
 	);
-	v2SidebarFolders.createIndex((folder) => folder.tabOrder, basicIndexConfig);
+	v2SidebarCollections.createIndex(
+		(collection) => collection.tabOrder,
+		basicIndexConfig,
+	);
 
 	const v2WorkspaceLocalState = createIndexedCollection(
 		localStorageCollectionOptions(
@@ -272,7 +275,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 
 	return {
 		v2SidebarProjects,
-		v2SidebarFolders,
+		v2SidebarCollections,
 		v2WorkspaceLocalState,
 		v2SidebarSections,
 		v2TerminalPresets,
