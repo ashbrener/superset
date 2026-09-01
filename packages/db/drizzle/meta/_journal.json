@@ -694,6 +694,41 @@
       "when": 1788022153311,
       "tag": "0098_automation_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1788022153312,
+      "tag": "0099_add_leaderboard_axis_cost",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1788134015857,
+      "tag": "0100_drop_chat_attachments_rename_page_version_storage_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1788145777142,
+      "tag": "0101_add_files_and_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1788147817056,
+      "tag": "0102_drop_circleback_trigger_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1788209866856,
+      "tag": "0103_stage_page_assets",
+      "breakpoints": true
     }
   ]
 }
