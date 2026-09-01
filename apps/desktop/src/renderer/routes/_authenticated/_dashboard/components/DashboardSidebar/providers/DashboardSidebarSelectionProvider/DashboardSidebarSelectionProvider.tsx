@@ -55,6 +55,7 @@ interface DashboardSidebarSelectionProviderProps {
 	availableWorkspaceIds: ReadonlySet<string>;
 	/** Project ids in rendered order — range selection follows this order. */
 	orderedProjectIds: string[];
+	activeWorkspaceId: string | null;
 	children: ReactNode;
 }
 
@@ -64,6 +65,7 @@ const DashboardSidebarSelectionContext =
 export function DashboardSidebarSelectionProvider({
 	availableWorkspaceIds,
 	orderedProjectIds,
+	activeWorkspaceId,
 	children,
 }: DashboardSidebarSelectionProviderProps) {
 	const [selection, setSelection] = useState<WorkspaceSelectionState>(
@@ -158,11 +160,15 @@ export function DashboardSidebarSelectionProvider({
 			// toolbar, one kind of bulk action at a time.
 			setProjectSelection(EMPTY_WORKSPACE_SELECTION);
 			setSelection((current) =>
-				applyWorkspaceSelection(current, { ...options, mode }),
+				applyWorkspaceSelection(current, {
+					...options,
+					mode,
+					activeWorkspaceId,
+				}),
 			);
 			return true;
 		},
-		[],
+		[activeWorkspaceId],
 	);
 
 	const selectProjectFromEvent = useCallback(

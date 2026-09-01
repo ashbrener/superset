@@ -153,6 +153,8 @@ export function DashboardSidebar({
 		collections,
 		pinnedWorkspaces,
 		sessionWorkspaces,
+		sessionTagGroups,
+		ungroupedSessionWorkspaces,
 		refreshWorkspacePullRequest,
 		toggleProjectCollapsed,
 	} = useDashboardSidebarData();
@@ -362,6 +364,7 @@ export function DashboardSidebar({
 		<DashboardSidebarSelectionProvider
 			availableWorkspaceIds={selectableWorkspaceIds}
 			orderedProjectIds={sortableProjectIds}
+			activeWorkspaceId={activeV2WorkspaceId}
 		>
 			<DashboardSidebarCollectionProvider value={collectionContextValue}>
 				<DashboardSidebarSectionRenameProvider>
@@ -403,6 +406,8 @@ export function DashboardSidebar({
 											/>
 											<DashboardSidebarSessionsSection
 												sessionWorkspaces={sessionWorkspaces}
+												tagGroups={sessionTagGroups}
+												ungroupedWorkspaces={ungroupedSessionWorkspaces}
 												isCollapsed={isCollapsed}
 												workspaceShortcutLabels={workspaceShortcutLabels}
 												onWorkspaceHover={refreshWorkspacePullRequest}

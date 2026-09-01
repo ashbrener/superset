@@ -37,6 +37,8 @@ export const DEAD_KEYS: DeadKey[] = [
 	{ key: "chat-preferences", match: "exact" },
 	// "Superset v2 is here" sidebar card; unmounted once v2 became the default
 	{ key: "v2-available-banner-v1", match: "exact" },
+	// Bumped to v2 so updated clients republish a full 30-day leaderboard window
+	{ key: "leaderboard-auto-publish-v1", match: "exact" },
 	// Sidebar project collections were "folders" until #5981 renamed them;
 	// the rows moved to v2-sidebar-collections-* with a collectionId field.
 	{ key: "v2-sidebar-folders-", match: "prefix" },

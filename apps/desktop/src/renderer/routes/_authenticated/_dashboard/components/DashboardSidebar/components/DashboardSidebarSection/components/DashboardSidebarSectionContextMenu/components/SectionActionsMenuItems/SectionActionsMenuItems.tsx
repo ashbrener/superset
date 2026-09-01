@@ -99,21 +99,21 @@ export function SectionActionsMenuItems({
 					</>
 				),
 			})}
-			{kind === "context" ? (
+			{onSetColor && kind === "context" ? (
 				<ContextMenuSub>
 					<ContextMenuSubTrigger>{colorTrigger}</ContextMenuSubTrigger>
 					<ContextMenuSubContent className="w-40 max-h-80 overflow-y-auto">
 						<ColorMenuItems kind={kind} color={color} onSelect={onSetColor} />
 					</ContextMenuSubContent>
 				</ContextMenuSub>
-			) : (
+			) : onSetColor ? (
 				<DropdownMenuSub>
 					<DropdownMenuSubTrigger>{colorTrigger}</DropdownMenuSubTrigger>
 					<DropdownMenuSubContent className="w-40 max-h-80 overflow-y-auto">
 						<ColorMenuItems kind={kind} color={color} onSelect={onSetColor} />
 					</DropdownMenuSubContent>
 				</DropdownMenuSub>
-			)}
+			) : null}
 			{onHide
 				? renderItem({
 						onSelect: onHide,
