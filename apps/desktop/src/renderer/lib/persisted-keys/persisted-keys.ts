@@ -37,6 +37,8 @@ export const DEAD_KEYS: DeadKey[] = [
 	{ key: "chat-preferences", match: "exact" },
 	// "Superset v2 is here" sidebar card; unmounted once v2 became the default
 	{ key: "v2-available-banner-v1", match: "exact" },
+	// Bumped to v2 so updated clients republish a full 30-day leaderboard window
+	{ key: "leaderboard-auto-publish-v1", match: "exact" },
 	// Router history moved to app-state.json (routerHistoryByWindow), which is
 	// pruned with the window set rather than swept from the renderer. The
 	// prefix entry also covers the per-window keys. Migration reads and removes
