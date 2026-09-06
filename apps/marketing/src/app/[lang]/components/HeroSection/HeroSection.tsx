@@ -18,18 +18,22 @@ export function HeroSection() {
 	const headlineSegments = [
 		{
 			id: "lead",
-			// Trailing space separates the two segments as the typewriter runs
+			// Typed newline, not a space: the headline is always two lines, and
+			// the break arrives as part of the animation (the caret drops to the
+			// second line) instead of the second segment starting on line one and
+			// reflowing down once it outgrows the width. Needs the h1's
+			// whitespace-pre-line to render.
 			text: `${t({
-				id: "marketing.hero.headlineLead",
 				message: "Bring Any Agent.",
-			})} `,
+			})}\n`,
 		},
 		{
 			id: "emphasis",
 			text: t({
-				id: "marketing.hero.headlineEmphasis",
 				message: "Orchestrate Them All.",
 			}),
+			// Beat on the empty second line before the payoff line types
+			delayBefore: 450,
 			// Plain inline (not inline-block): vertical padding on inline boxes
 			// paints the brackets without affecting line height, so the line
 			// can't jump when this segment mounts mid-animation
@@ -51,14 +55,10 @@ export function HeroSection() {
 							<span className="text-brand shrink-0">●</span>
 							<span>
 								<span className="sm:hidden">
-									<Trans id="marketing.hero.hiring">
-										We&apos;re hiring engineers
-									</Trans>
+									<Trans>We&apos;re hiring engineers</Trans>
 								</span>
 								<span className="hidden sm:inline">
-									<Trans id="marketing.hero.hiringInSanFrancisco">
-										We&apos;re hiring engineers in San Francisco
-									</Trans>
+									<Trans>We&apos;re hiring engineers in San Francisco</Trans>
 								</span>
 							</span>
 							<span className="shrink-0 transition-transform group-hover:translate-x-0.5">
@@ -66,7 +66,7 @@ export function HeroSection() {
 							</span>
 						</Link>
 						<div className="space-y-4 sm:space-y-6">
-							<h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-medium tracking-tight leading-[1.1] [word-spacing:0.15em] text-foreground relative max-w-6xl mx-auto">
+							<h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-medium tracking-tight leading-[1.1] [word-spacing:0.15em] whitespace-pre-line text-foreground relative max-w-6xl mx-auto">
 								{/* Real headline for screen readers and no-JS crawlers; the
 								    typewriter below is purely visual */}
 								<span className="sr-only">
@@ -96,7 +96,7 @@ export function HeroSection() {
 								id="hero-subheadline"
 								className="text-base sm:text-xl font-light text-muted-foreground max-w-4xl mx-auto"
 							>
-								<Trans id="marketing.hero.subheadline">
+								<Trans>
 									One workspace for Claude Code, Codex, and any coding agent.
 								</Trans>
 							</p>
@@ -109,11 +109,10 @@ export function HeroSection() {
 								className="px-4 py-2.5 sm:px-6 sm:py-3 text-sm sm:text-base font-normal bg-background border border-border text-foreground hover:bg-muted transition-colors flex items-center gap-2"
 								onClick={() => window.open(COMPANY.GITHUB_URL, "_blank")}
 								aria-label={t({
-									id: "marketing.hero.viewOnGithub",
 									message: "View on GitHub",
 								})}
 							>
-								<Trans id="marketing.hero.viewOnGithub">View on GitHub</Trans>
+								<Trans>View on GitHub</Trans>
 								<FaGithub className="size-4" />
 							</button>
 						</div>
