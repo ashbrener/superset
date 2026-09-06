@@ -3,20 +3,19 @@
 import type { MessageDescriptor } from "@lingui/core";
 import { msg } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import { PillTabs } from "@/app/[lang]/components/PillTabs";
 import type { LeaderboardMetric } from "@/app/[lang]/utils/fetchLeaderboard";
-import { PillTabs } from "../PillTabs";
 
 const METRICS: Array<{ id: LeaderboardMetric; label: MessageDescriptor }> = [
 	{
 		id: "tokens",
 		label: msg({
-			id: "marketing.leaderboard.metric.tokens",
 			message: "Tokens",
 		}),
 	},
 	{
 		id: "cost",
-		label: msg({ id: "marketing.leaderboard.metric.cost", message: "Cost" }),
+		label: msg({ message: "Cost" }),
 	},
 ];
 
@@ -31,7 +30,6 @@ export function MetricTabs({ value, onChange }: MetricTabsProps) {
 	return (
 		<PillTabs
 			label={t({
-				id: "marketing.leaderboard.metric.ariaLabel",
 				message: "Rank by",
 			})}
 			value={value}

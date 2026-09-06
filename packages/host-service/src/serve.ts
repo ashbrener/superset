@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import { createApp } from "./app";
 import { getSupervisor, startDaemonBootstrap } from "./daemon";
 import { env } from "./env";
+import { installConsoleTimestamps } from "./log-timestamps";
 import {
 	ConfigFileSessionTokenSource,
 	JwtApiAuthProvider,
@@ -21,6 +22,7 @@ import { startTerminalReaper } from "./terminal/reaper";
 import { connectRelay } from "./tunnel";
 
 async function main(): Promise<void> {
+	installConsoleTimestamps();
 	initSentry({ organizationId: env.ORGANIZATION_ID });
 	console.log(
 		`[host-service] starting (org=${env.ORGANIZATION_ID}, port=${env.PORT}, NODE_ENV=${process.env.NODE_ENV ?? "unset"})`,
@@ -67,7 +69,7 @@ async function main(): Promise<void> {
 		apiUrl: env.SUPERSET_API_URL,
 	});
 
-	const { app, injectWebSocket, api, db } = createApp({
+	const { app, injectWebSocket, api, db, launchSandboxAgent } = createApp({
 		config: {
 			organizationId: env.ORGANIZATION_ID,
 			dbPath: env.HOST_DB_PATH,
@@ -127,6 +129,10 @@ async function main(): Promise<void> {
 		console.log(`[host-service] listening on http://${address}:${info.port}`);
 
 		startTerminalReaper(db);
+		// A cloud workspace created with an agent starts it now: the pty daemon
+		// and event bus are up, and a person opening the workspace sees the
+		// agent's terminal the way they would on their own machine.
+		void launchSandboxAgent();
 
 		if (env.RELAY_URL && env.SUPERSET_HOST_RUN_MODE !== "sandbox") {
 			void connectRelay({

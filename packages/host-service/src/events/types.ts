@@ -1,5 +1,6 @@
 import type { DetectedPort } from "@superset/port-scanner";
 import type { AgentIdentity } from "@superset/shared/agent-identity";
+import type { WorkspaceTagAssignment } from "@superset/shared/workspace-tags";
 import type { FsWatchEvent } from "@superset/workspace-fs/host";
 import type { AgentLifecycleEventType } from "./map-event-type.ts";
 
@@ -31,6 +32,18 @@ export interface AgentLifecycleMessage {
 	// Absent when the hook ran without `SUPERSET_AGENT_ID` set (legacy shells
 	// or third-party hook configs that bypass our wrappers).
 	agent?: AgentIdentity;
+	occurredAt: number;
+}
+
+/**
+ * Invalidation-only signal for host-owned agent bindings changed outside a
+ * lifecycle hook (for example, the sidebar's Clear Status action). This is
+ * intentionally separate from `agent:lifecycle`: consumers should refetch
+ * binding state without playing completion sounds or showing notifications.
+ */
+export interface AgentBindingsChangedMessage {
+	type: "agent:bindings-changed";
+	workspaceId: string;
 	occurredAt: number;
 }
 
@@ -70,8 +83,24 @@ export interface WorkspaceSnapshot {
 	createdByUserId: string | null;
 	createdAt: number;
 	updatedAt: number;
-	/** Normalized, sorted tag set; sidebar folders derive from it. */
+	/**
+	 * Epoch ms of the newest agent lifecycle event, or null for rows that
+	 * predate the column. Unlike `updatedAt` it never moves on metadata
+	 * writes (rename, tags, PR link).
+	 */
+	lastActivityAt: number | null;
+	/**
+	 * Every tag on the workspace, normalized and sorted, whoever applied it.
+	 * Consumers that know who they are read `tagAssignments` instead.
+	 */
 	tags: string[];
+	/**
+	 * Each tag with the user who applied it. Tags are personal (see
+	 * `isWorkspaceTagVisibleTo`): a client keeps the ones it can see and
+	 * derives its sidebar folders from those. Absent from hosts that predate
+	 * the field.
+	 */
+	tagAssignments?: WorkspaceTagAssignment[];
 }
 
 export interface WorkspaceChangedMessage {
@@ -83,12 +112,31 @@ export interface WorkspaceChangedMessage {
 	occurredAt: number;
 }
 
-/** One tag folder's host-side presentation (see workspace_tag_settings). */
+/** One tag folder's host-side presentation (see tag_folder_settings). */
 export interface TagSettingSnapshot {
 	tag: string;
 	displayName: string | null;
 	color: string | null;
 	tabOrder: number | null;
+}
+
+/**
+ * A tag folder's presentation plus the scope it lives under — a project id,
+ * or `SESSIONS_TAG_SCOPE` for the project-less Sessions lane. Folders travel
+ * on their own channel rather than riding project snapshots, because the
+ * Sessions lane has no project to ride on.
+ */
+export interface TagFolderSettingSnapshot extends TagSettingSnapshot {
+	scope: string;
+}
+
+export interface TagFoldersChangedMessage {
+	type: "tag-folders:changed";
+	/** The scope whose folders changed. */
+	scope: string;
+	/** The scope's full set after the change — empty when all were removed. */
+	settings: TagFolderSettingSnapshot[];
+	occurredAt: number;
 }
 
 /**
@@ -111,9 +159,8 @@ export interface ProjectSnapshot {
 	createdAt: number;
 	updatedAt: number;
 	/**
-	 * Tag-folder presentation rows. Optional: absent on snapshots built where
-	 * the emitter had no settings at hand (and from older hosts) — consumers
-	 * keep their last known set rather than clearing.
+	 * @deprecated Compatibility for desktops that predate the tagFolders
+	 * router. New consumers read tag-folder presentation from that router.
 	 */
 	tagSettings?: TagSettingSnapshot[];
 }
@@ -160,6 +207,10 @@ export interface WorkspaceCreateSettledMessage {
 export interface EventBusErrorMessage {
 	type: "error";
 	message: string;
+	/** Set on command rejections a client can act on. */
+	code?: "git-watch-cap";
+	/** The workspace whose command was rejected. */
+	workspaceId?: string;
 }
 
 export interface PageWatchChangedMessage {
@@ -172,11 +223,13 @@ export type ServerMessage =
 	| FsEventsMessage
 	| GitChangedMessage
 	| AgentLifecycleMessage
+	| AgentBindingsChangedMessage
 	| TerminalLifecycleMessage
 	| PortChangedMessage
 	| WorkspaceChangedMessage
 	| WorkspaceCreateSettledMessage
 	| ProjectChangedMessage
+	| TagFoldersChangedMessage
 	| PageWatchChangedMessage
 	| EventBusErrorMessage;
 
@@ -189,6 +242,22 @@ export interface FsWatchCommand {
 
 export interface FsUnwatchCommand {
 	type: "fs:unwatch";
+	workspaceId: string;
+}
+
+/**
+ * Register interest in a workspace's `git:changed` events, driving
+ * `GitWatcher`'s refcounted registration (see #6729) — a workspace with no
+ * `git:watch` interest from any client, and no internal host-service
+ * subscriber, is never watched.
+ */
+export interface GitWatchCommand {
+	type: "git:watch";
+	workspaceId: string;
+}
+
+export interface GitUnwatchCommand {
+	type: "git:unwatch";
 	workspaceId: string;
 }
 
@@ -215,4 +284,6 @@ export type ClientMessage =
 	| FsWatchCommand
 	| FsUnwatchCommand
 	| FsWatchFileCommand
-	| FsUnwatchFileCommand;
+	| FsUnwatchFileCommand
+	| GitWatchCommand
+	| GitUnwatchCommand;

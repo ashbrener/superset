@@ -1,5 +1,6 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { msg } from "@lingui/core/macro";
 import {
 	setAgentSetupTemplatesDir,
 	setupAgentIntegrations,
@@ -8,6 +9,10 @@ import {
 } from "@superset/agent-setup";
 import { i18n, initI18nAsync } from "@superset/i18n";
 import { settings } from "@superset/local-db";
+import {
+	devAppProfileDirName,
+	isDevAppProfileDirName,
+} from "@superset/shared/dev-app-profile";
 import { app, dialog, Notification, net, protocol, session } from "electron";
 import { makeAppSetup } from "lib/electron-app/factories/app/setup";
 import {
@@ -23,6 +28,7 @@ import {
 	PLATFORM,
 	PROTOCOL_SCHEME,
 } from "shared/constants";
+import { sweepDevAppProfiles } from "./dev-app-profile-sweep";
 import { initAppState } from "./lib/app-state";
 import { requestAppleEventsAccess } from "./lib/apple-events-permission";
 import { isUpdateReadyToInstall, setupAutoUpdater } from "./lib/auto-updater";
@@ -37,11 +43,6 @@ import { resolveAppLocale } from "./lib/language";
 import { localDb } from "./lib/local-db";
 import { requestLocalNetworkAccess } from "./lib/local-network-permission";
 import { menuEmitter } from "./lib/menu-events";
-import { PAGE_SCHEME, pageProtocolHandler } from "./lib/pageContent";
-import {
-	THUMBNAIL_SCHEME,
-	thumbnailProtocolHandler,
-} from "./lib/pageThumbnails";
 import {
 	initTanstackDbPersistence,
 	shutdownTanstackDbPersistence,
@@ -77,11 +78,24 @@ void applyShellEnvToProcess().catch((error) => {
 	console.error("[main] Failed to apply shell environment:", error);
 });
 
-// Dev mode: label the app with the workspace name so multiple worktrees are distinguishable
+// Dev mode: label the app with the workspace name so multiple worktrees are
+// distinguishable. This also moves `app.getPath("userData")`, so the workspace
+// gets its own Chromium profile — see sweepDevAppProfiles for the reaping.
 if (IS_DEV) {
 	const workspaceName = resolveDevWorkspaceName();
-	if (workspaceName) {
-		app.setName(`Superset (${workspaceName})`);
+	const profileName = workspaceName
+		? devAppProfileDirName(workspaceName)
+		: undefined;
+	// A name carrying a path separator would make Electron nest userData inside
+	// a directory neither the sweep nor teardown can ever reap. Keep the
+	// default profile instead — a shared dock label beats an unreclaimable one.
+	if (profileName && isDevAppProfileDirName(profileName)) {
+		app.setName(profileName);
+	} else if (profileName) {
+		console.warn(
+			"[main] Not renaming the app: unusable profile name",
+			profileName,
+		);
 	}
 }
 
@@ -116,18 +130,20 @@ async function processDeepLink(url: string): Promise<void> {
 			console.error("[main] Auth deep link failed:", result.error);
 			focusMainWindow();
 			dialog.showErrorBox(
-				i18n._({ id: "main.auth.failed.title", message: "Sign-in failed" }),
+				i18n._(msg({ message: "Sign-in failed" })),
 				authLink.type === "valid"
 					? (result.error ??
-							i18n._({
-								id: "main.auth.failed.detail",
-								message:
-									"Superset could not complete sign-in. Please try again.",
-							}))
-					: i18n._({
-							id: "main.auth.failed.incompleteLink",
-							message: "The sign-in link was incomplete. Please try again.",
-						}),
+							i18n._(
+								msg({
+									message:
+										"Superset could not complete sign-in. Please try again.",
+								}),
+							))
+					: i18n._(
+							msg({
+								message: "The sign-in link was incomplete. Please try again.",
+							}),
+						),
 			);
 		}
 		return;
@@ -257,16 +273,17 @@ app.on("before-quit", async (event) => {
 			const { response } = await dialog.showMessageBox({
 				type: "question",
 				buttons: [
-					i18n._({ id: "main.quit.confirm", message: "Quit" }),
-					i18n._({ id: "main.dialog.cancel", message: "Cancel" }),
+					i18n._(msg({ message: "Quit" })),
+					i18n._(msg({ message: "Cancel" })),
 				],
 				defaultId: 0,
 				cancelId: 1,
-				title: i18n._({ id: "main.quit.title", message: "Quit Superset" }),
-				message: i18n._({
-					id: "main.quit.message",
-					message: "Are you sure you want to quit?",
-				}),
+				title: i18n._(msg({ message: "Quit Superset" })),
+				message: i18n._(
+					msg({
+						message: "Are you sure you want to quit?",
+					}),
+				),
 			});
 
 			if (response === 1) {
@@ -360,6 +377,12 @@ if (process.env.NODE_ENV === "development") {
 	parentCheckInterval.unref();
 }
 
+// Chromium refuses to cache any single entry larger than about an eighth
+// of the disk cache, and the default cache is a few hundred MB — too
+// small for a video inside a page. 1 GiB lifts the per-entry cap to
+// roughly 128 MB.
+app.commandLine.appendSwitch("disk-cache-size", String(1024 * 1024 * 1024));
+
 protocol.registerSchemesAsPrivileged([
 	{
 		scheme: "superset-icon",
@@ -372,22 +395,6 @@ protocol.registerSchemesAsPrivileged([
 	},
 	{
 		scheme: "superset-font",
-		privileges: {
-			standard: true,
-			secure: true,
-			bypassCSP: true,
-			supportFetchAPI: true,
-		},
-	},
-	{
-		scheme: PAGE_SCHEME,
-		privileges: {
-			standard: true,
-			secure: true,
-		},
-	},
-	{
-		scheme: THUMBNAIL_SCHEME,
 		privileges: {
 			standard: true,
 			secure: true,
@@ -457,16 +464,6 @@ if (!gotTheLock) {
 			.fromPartition("persist:superset")
 			.protocol.handle("superset-icon", iconProtocolHandler);
 
-		protocol.handle(PAGE_SCHEME, pageProtocolHandler);
-		session
-			.fromPartition("persist:superset")
-			.protocol.handle(PAGE_SCHEME, pageProtocolHandler);
-
-		protocol.handle(THUMBNAIL_SCHEME, thumbnailProtocolHandler);
-		session
-			.fromPartition("persist:superset")
-			.protocol.handle(THUMBNAIL_SCHEME, thumbnailProtocolHandler);
-
 		// Serve system fonts (e.g. SF Mono on macOS) via custom protocol
 		// so the renderer can use @font-face with font-src 'self' CSP
 		if (process.platform === "darwin") {
@@ -504,6 +501,7 @@ if (!gotTheLock) {
 		initTanstackDbPersistence();
 
 		sweepNetworkLogs();
+		sweepDevAppProfiles();
 
 		await loadWebviewBrowserExtension();
 

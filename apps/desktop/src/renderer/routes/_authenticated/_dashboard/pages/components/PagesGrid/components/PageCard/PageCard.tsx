@@ -27,6 +27,7 @@ export interface PageCardItem {
 	slug: string;
 	title: string;
 	url: string;
+	thumbnailUrl: string | null;
 	visibility: string;
 	createdAt: Date | string;
 	updatedAt: Date | string;
@@ -70,14 +71,12 @@ export function PageCard({
 			await navigator.clipboard.writeText(page.url);
 			toast.success(
 				t({
-					id: "dashboard.pages.pageCard.linkCopied",
 					message: "Link copied",
 				}),
 			);
 		} catch {
 			toast.error(
 				t({
-					id: "dashboard.pages.pageCard.copyLinkFailed",
 					message: "Could not copy the link",
 				}),
 			);
@@ -91,22 +90,14 @@ export function PageCard({
 				onClick={(event) => onOpen(page, event)}
 				className="flex flex-1 flex-col text-left"
 			>
-				<PageThumbnail
-					pageId={page.id}
-					version={page.sharedVersion ?? page.latestVersion}
-					accountId={currentUserId}
-				/>
+				<PageThumbnail src={page.thumbnailUrl} />
 				<div className="flex flex-col gap-1 border-border/60 border-t px-3 py-2.5">
 					<span className="truncate font-medium text-sm">{page.title}</span>
 					<span className="flex items-center gap-1.5 text-muted-foreground text-xs">
 						<VisibilityIcon className="size-3 shrink-0" />
 						<span aria-hidden="true">·</span>
 						<span className="truncate">
-							{wasEdited ? (
-								<Trans id="dashboard.pages.pageCard.edited">Edited</Trans>
-							) : (
-								<Trans id="dashboard.pages.pageCard.created">Created</Trans>
-							)}{" "}
+							{wasEdited ? <Trans>Edited</Trans> : <Trans>Created</Trans>}{" "}
 							{timestamp}
 						</span>
 						{ownerName ? (
@@ -130,7 +121,6 @@ export function PageCard({
 						variant="ghost"
 						size="icon-sm"
 						aria-label={t({
-							id: "dashboard.pages.pageCard.actionsFor",
 							message: `Actions for ${page.title}`,
 						})}
 						className={cn(
@@ -148,15 +138,11 @@ export function PageCard({
 						) : (
 							<Pin className="size-4" />
 						)}
-						{isPinned ? (
-							<Trans id="dashboard.pages.pageCard.unpin">Unpin</Trans>
-						) : (
-							<Trans id="dashboard.pages.pageCard.pin">Pin</Trans>
-						)}
+						{isPinned ? <Trans>Unpin</Trans> : <Trans>Pin</Trans>}
 					</DropdownMenuItem>
 					<DropdownMenuItem onSelect={() => void copyLink()}>
 						<Link2 className="size-4" />
-						<Trans id="dashboard.pages.pageCard.copyLink">Copy link</Trans>
+						<Trans>Copy link</Trans>
 					</DropdownMenuItem>
 					{isOwner ? (
 						<DropdownMenuItem
@@ -164,7 +150,7 @@ export function PageCard({
 							onSelect={() => setDeleteOpen(true)}
 						>
 							<Trash2 className="size-4" />
-							<Trans id="dashboard.pages.pageCard.delete">Delete</Trans>
+							<Trans>Delete</Trans>
 						</DropdownMenuItem>
 					) : null}
 				</DropdownMenuContent>

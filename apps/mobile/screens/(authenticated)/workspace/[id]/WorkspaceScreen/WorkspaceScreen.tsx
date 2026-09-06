@@ -1,9 +1,15 @@
 import type { MessageDescriptor } from "@lingui/core";
 import { msg } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { ComposerHandle } from "@superset/composer";
+import type {
+	ComposerHandle,
+	ComposerQuickKeysAction,
+	ComposerSessionTab,
+} from "@superset/composer";
 import { i18n } from "@superset/i18n";
+import { errorMessage } from "@superset/i18n/errors";
 import { useQueryClient } from "@tanstack/react-query";
+import * as Clipboard from "expo-clipboard";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import {
 	CloudOff,
@@ -14,6 +20,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	ActivityIndicator,
+	Alert,
 	Keyboard,
 	LayoutAnimation,
 	Pressable,
@@ -33,7 +40,9 @@ import {
 	getHostTerminalsQueryKey,
 	useHostTerminals,
 } from "@/screens/(authenticated)/(home)/home/hooks/useHostTerminals";
+import { HeaderNotice } from "@/screens/(authenticated)/components/HeaderNotice";
 import { PressableScale } from "@/screens/(authenticated)/components/PressableScale";
+import { useAgentIconUris } from "@/screens/(authenticated)/hooks/useAgentIconUris";
 import { useAppReviewPrompt } from "@/screens/(authenticated)/hooks/useAppReviewPrompt";
 import { useCreateTerminalWorkspace } from "@/screens/(authenticated)/hooks/useCreateTerminalWorkspace";
 import { useSlashCommands } from "@/screens/(authenticated)/hooks/useSlashCommands";
@@ -42,14 +51,11 @@ import { useTerminalSeenStore } from "@/screens/(authenticated)/stores/terminalS
 import { useTerminalTabOrderStore } from "@/screens/(authenticated)/stores/terminalTabOrderStore";
 import { useUnreadWorkspacesStore } from "@/screens/(authenticated)/stores/unreadWorkspacesStore";
 import { CloudWorkspaceProvisioningState } from "../components/CloudWorkspaceProvisioningState";
-import { HeaderNotice } from "../components/HeaderNotice";
-import { PullRequestsButton } from "../components/PullRequestsButton";
 import { ScrollToBottomButton } from "../components/ScrollToBottomButton";
 import {
 	TerminalComposer,
 	type TerminalQuickKey,
 } from "../components/TerminalComposer";
-import { TerminalTabs } from "../components/TerminalTabs";
 import {
 	type TerminalConnectionState,
 	type TerminalControlMessage,
@@ -58,8 +64,10 @@ import {
 	type TerminalWebViewHandle,
 } from "../components/TerminalWebView";
 import { useHostCompatibility } from "../hooks/useHostCompatibility";
+import { usePullRequestIconUri } from "../hooks/usePullRequestIconUri";
 import { useWorkspacePullRequests } from "../hooks/useWorkspacePullRequest";
 import { orderTerminalRows } from "../utils/orderTerminalRows";
+import { PULL_REQUEST_SYMBOL, pullRequestStatus } from "../utils/pullRequest";
 import { WorkspaceCreateFailedState } from "./components/WorkspaceCreateFailedState";
 import { WorkspaceCreatingState } from "./components/WorkspaceCreatingState";
 import { WorkspacePlaceholder } from "./components/WorkspacePlaceholder";
@@ -84,13 +92,11 @@ const PENDING_CREATE_SESSION_TIMEOUT_MS = 60_000;
 const STATE_BANNERS: Partial<
 	Record<TerminalConnectionState, MessageDescriptor>
 > = {
-	connecting: msg({ id: "mobile.terminal.connecting", message: "Connecting…" }),
+	connecting: msg({ message: "Connecting…" }),
 	reconnecting: msg({
-		id: "mobile.terminal.reconnecting",
 		message: "Reconnecting…",
 	}),
 	denied: msg({
-		id: "mobile.terminal.denied",
 		message: "You don't have access to this terminal.",
 	}),
 };
@@ -99,7 +105,16 @@ const STATE_BANNERS: Partial<
  * The workspace IS the terminal: sessions render as tabs (agent mark + name),
  * the active tab is the one live attached stream, and the + menu launches a
  * new session from the host's agent presets (or a plain shell). Chrome: the
- * compact header (name → action sheet, Review pill) and the terminal composer.
+ * compact header (name → action sheet) and the terminal composer, whose
+ * quick-key row also carries this workspace's pull requests.
+ *
+ * The tab strip is drawn by the composer rather than here. It sits directly
+ * above the quick keys, inside the composer's own view tree, because its
+ * position depends on the composer's height — as a sibling it would have to
+ * guess a number that only exists on the other side of the bridge, which is the
+ * drift `ComposerQuickKeys` was moved native to fix. This screen still owns
+ * every decision: which session is attached, what closing one costs, the order
+ * they sit in.
  */
 export function WorkspaceScreen() {
 	const { t } = useLingui();
@@ -208,7 +223,6 @@ export function WorkspaceScreen() {
 			failPendingCreate(
 				workspaceId,
 				t({
-					id: "mobile.workspaceCreate.timedOut",
 					message: "Timed out waiting for the host to create the workspace.",
 				}),
 			);
@@ -322,6 +336,22 @@ export function WorkspaceScreen() {
 		requestAppReview("session_completed");
 	}, [activeRow, markTerminalSeen, requestAppReview]);
 
+	// Brand marks as file URIs: the composer draws them, and neither SwiftUI nor
+	// the bridge can read a Metro asset reference.
+	const agentIds = useMemo(() => rows.map((row) => row.agentId), [rows]);
+	const agentIconUris = useAgentIconUris(agentIds);
+	const sessionTabs = useMemo<ComposerSessionTab[]>(
+		() =>
+			rows.map((row) => ({
+				id: row.terminalId,
+				label: row.title,
+				iconUri: row.agentId ? agentIconUris[row.agentId] : undefined,
+				selected: row.terminalId === activeTerminalId,
+				attention: row.attention ?? undefined,
+			})),
+		[rows, activeTerminalId, agentIconUris],
+	);
+
 	const invalidateTerminals = useCallback(() => {
 		if (!host) return;
 		void queryClient.invalidateQueries({
@@ -355,9 +385,48 @@ export function WorkspaceScreen() {
 			if (!workspace || !hostUrl) return;
 			void getHostServiceClientByUrl(hostUrl)
 				.terminal.killSession.mutate({ terminalId, workspaceId: workspace.id })
+				// A kill that fails leaves the tab exactly where it was, which reads
+				// as the tap having missed. Cheap to ignore while closing was a
+				// long-press only; the strip now offers it on every selected tab and
+				// in the press-and-hold menu, so silence is no longer affordable.
+				.catch((cause: unknown) =>
+					Alert.alert(
+						t({
+							message: "Could not close the session",
+						}),
+						errorMessage(cause),
+					),
+				)
 				.finally(invalidateTerminals);
 		},
-		[workspace, hostUrl, invalidateTerminals],
+		[workspace, hostUrl, invalidateTerminals, t],
+	);
+
+	// The composer reports the intent and stops there: it has no idea that
+	// closing a tab kills an agent mid-task, so the confirm lives here. Reached
+	// from the selected tab's close disc and from its press-and-hold menu.
+	const confirmCloseTerminal = useCallback(
+		(terminalId: string) => {
+			const row = rows.find((candidate) => candidate.terminalId === terminalId);
+			Alert.alert(
+				t({
+					message: "Close session",
+				}),
+				row?.title,
+				[
+					{
+						text: t({ message: "Cancel" }),
+						style: "cancel",
+					},
+					{
+						text: t({ message: "Close" }),
+						style: "destructive",
+						onPress: () => killTerminal(terminalId),
+					},
+				],
+			);
+		},
+		[rows, killTerminal, t],
 	);
 
 	// --- active terminal connection (one live stream; tabs switch it) ---
@@ -365,10 +434,8 @@ export function WorkspaceScreen() {
 	const [connectionState, setConnectionState] =
 		useState<TerminalConnectionState>("connecting");
 	// Reported by the composer itself: it draws in an overlay and takes no
-	// layout space here, so `onLayout` on the wrapper below measures only the
-	// pull-requests button.
+	// layout space here, so nothing below can measure it.
 	const [composerHeight, setComposerHeight] = useState(0);
-	const [aboveComposerHeight, setAboveComposerHeight] = useState(0);
 	const [keyboardHeight, setKeyboardHeight] = useState(0);
 	const [composerActive, setComposerActive] = useState(false);
 	const composerRef = useRef<ComposerHandle>(null);
@@ -391,10 +458,21 @@ export function WorkspaceScreen() {
 	const handleCopied = useCallback(
 		() =>
 			setNotice((prev) => ({
-				text: t({ id: "mobile.terminal.copied", message: "Copied" }),
+				text: t({ message: "Copied" }),
 				seq: (prev?.seq ?? 0) + 1,
 			})),
 		[t],
+	);
+
+	// Press and hold a tab → Copy session ID. The pasteboard write lands here
+	// rather than natively so it shares the header notice every other copy on
+	// this screen already uses.
+	const copyTerminalId = useCallback(
+		(terminalId: string) => {
+			void Clipboard.setStringAsync(terminalId).then(handleCopied);
+			posthog.capture("session_id_copied", { workspace_id: id ?? null });
+		},
+		[handleCopied, id],
 	);
 
 	useEffect(() => {
@@ -484,6 +562,55 @@ export function WorkspaceScreen() {
 		[id, hostUrl, workspace],
 	);
 
+	// The chip beside the quick keys, or nothing. Mark and colour both come off
+	// the newest pull request, the way the pill this replaced did.
+	const pullRequestStatusNow = pullRequests[0]
+		? pullRequestStatus(pullRequests[0])
+		: null;
+	const pullRequestIconUri = usePullRequestIconUri(pullRequestStatusNow);
+	const pullRequestAction = useMemo((): ComposerQuickKeysAction | undefined => {
+		const latest = pullRequests[0];
+		if (!latest) return undefined;
+		const status = pullRequestStatus(latest);
+		// Named, not `pullRequests.length` inline: the macro takes the
+		// placeholder's name from the expression, and a member access would
+		// rewrite the catalog's {count} to {0} and strand every translation.
+		const count = pullRequests.length;
+		return {
+			symbol: PULL_REQUEST_SYMBOL[status],
+			iconUri: pullRequestIconUri ?? undefined,
+			tint: status,
+			label:
+				count === 1
+					? t({
+							message: "View pull request",
+						})
+					: t({
+							message: `View ${count} pull requests`,
+						}),
+		};
+	}, [pullRequests, pullRequestIconUri, t]);
+
+	// One PR goes straight to it; a history goes to the list. Captured by hand
+	// because the tap lands in SwiftUI, where RN autocapture cannot see it.
+	const openPullRequests = useCallback(() => {
+		posthog.capture("pull_requests_opened", {
+			workspace_id: id ?? null,
+			count: pullRequests.length,
+		});
+		if (pullRequests.length > 1) {
+			router.push({
+				pathname: "/workspace/[id]/pull-requests",
+				params: { id },
+			});
+			return;
+		}
+		router.push({
+			pathname: "/workspace/[id]/pull-request/[pullRequestId]",
+			params: { id, pullRequestId: String(pullRequests[0]?.prNumber ?? "") },
+		});
+	}, [id, pullRequests, router]);
+
 	// Full-body takeover while the enqueued create is unresolved — the
 	// mobile equivalent of desktop's layout gate: same route, no navigation,
 	// and none of the chrome that assumes a workspace exists (tab strip,
@@ -499,7 +626,6 @@ export function WorkspaceScreen() {
 					options={{
 						...headerOptions,
 						title: t({
-							id: "mobile.workspaceCreate.newWorkspace",
 							message: "New workspace",
 						}),
 					}}
@@ -530,7 +656,7 @@ export function WorkspaceScreen() {
 			<Stack.Screen
 				options={{
 					...headerOptions,
-					title: t({ id: "mobile.nav.workspace.title", message: "Workspace" }),
+					title: t({ message: "Workspace" }),
 					headerTitle: notice
 						? () => (
 								<HeaderNotice
@@ -551,9 +677,10 @@ export function WorkspaceScreen() {
 							}
 							disabled={!workspace}
 						>
-							{/* Width budget: the back capsule and Review button leave ~210pt
-							    of bar on a 390pt screen — wider and the title collides with
-							    the back button under iOS 26's floating bar items. */}
+							{/* Width budget: the back capsule leaves ~210pt of bar on a 390pt
+							    screen — wider and the title collides with the back button under
+							    iOS 26's floating bar items. Anything that lands in the bar later
+							    comes out of this. */}
 							<View className="max-w-52">
 								<Text className="font-semibold text-[17px]" numberOfLines={1}>
 									{workspace?.name ?? cloud?.name ?? ""}
@@ -563,19 +690,6 @@ export function WorkspaceScreen() {
 					</Stack.Title>
 				)}
 			</Stack.Screen>
-
-			{/* A cloud workspace exists on screen before anything serves it; the
-			    tab strip would only offer sessions on a sandbox that isn't up. */}
-			{cloud && !workspace ? null : (
-				<TerminalTabs
-					rows={rows}
-					activeTerminalId={activeTerminalId}
-					onSelect={pickTerminal}
-					onAdd={openAddMenu}
-					onManage={openSessions}
-					onClose={killTerminal}
-				/>
-			)}
 
 			{banner && activeTerminalId ? (
 				<View className="bg-muted px-3 py-1.5">
@@ -587,13 +701,11 @@ export function WorkspaceScreen() {
 			{connectionState === "error" && activeTerminalId ? (
 				<View className="bg-muted flex-row items-center justify-center gap-3 px-3 py-1.5">
 					<Text className="text-muted-foreground text-xs">
-						<Trans id="mobile.terminal.connectionFailed">
-							Connection failed.
-						</Trans>
+						<Trans>Connection failed.</Trans>
 					</Text>
 					<Pressable onPress={() => terminalRef.current?.retry()}>
 						<Text className="text-foreground text-xs font-medium">
-							<Trans id="mobile.terminal.retry">Retry</Trans>
+							<Trans>Retry</Trans>
 						</Text>
 					</Pressable>
 				</View>
@@ -605,21 +717,19 @@ export function WorkspaceScreen() {
 					// The terminal has to clear everything stacked at the bottom or its
 					// own prompt hides behind the composer.
 					marginBottom: showComposer
-						? composerHeight + aboveComposerHeight + composerBottom
-						: aboveComposerHeight + composerBottom,
+						? composerHeight + composerBottom
+						: composerBottom,
 				}}
 			>
 				{hostCompatibility.incompatible ? (
 					<WorkspacePlaceholder
 						body={t({
-							id: "mobile.workspace.hostOutdated.body",
-							message: `${host?.name ?? t({ id: "mobile.workspace.thisHost", message: "This host" })} is running host service ${hostCompatibility.hostVersion} — this app needs ${hostCompatibility.minVersion} or newer. Update Superset on that machine.`,
+							message: `${host?.name ?? t({ message: "This host" })} is running host service ${hostCompatibility.hostVersion} — this app needs ${hostCompatibility.minVersion} or newer. Update Superset on that machine.`,
 						})}
 						icon={TriangleAlert}
 						onRefresh={onRefresh}
 						refreshing={refreshing}
 						title={t({
-							id: "mobile.workspace.hostOutdated.title",
 							message: "This host needs an update",
 						})}
 					/>
@@ -681,7 +791,6 @@ export function WorkspaceScreen() {
 				) : !host ? (
 					<WorkspacePlaceholder
 						body={t({
-							id: "mobile.workspace.hostOffline.body",
 							message:
 								"It will reconnect on its own once the machine is back. Pull to check again.",
 						})}
@@ -689,7 +798,6 @@ export function WorkspaceScreen() {
 						onRefresh={onRefresh}
 						refreshing={refreshing}
 						title={t({
-							id: "mobile.workspace.hostOffline.title",
 							message: "This workspace's host is offline",
 						})}
 					/>
@@ -703,14 +811,11 @@ export function WorkspaceScreen() {
 							>
 								<Icon as={Plus} className="text-foreground size-4" />
 								<Text className="font-medium text-[15px]">
-									<Trans id="mobile.workspace.startSession">
-										Start a session
-									</Trans>
+									<Trans>Start a session</Trans>
 								</Text>
 							</Pressable>
 						}
 						body={t({
-							id: "mobile.workspace.noSessions.body",
 							message:
 								"Start an agent or a terminal to begin working in this workspace.",
 						})}
@@ -718,67 +823,38 @@ export function WorkspaceScreen() {
 						onRefresh={onRefresh}
 						refreshing={refreshing}
 						title={t({
-							id: "mobile.workspace.noSessions.title",
 							message: "No sessions yet",
 						})}
 					/>
 				)}
 			</View>
 
-			{showComposer || pullRequests.length > 0 ? (
-				<View
-					className="absolute inset-x-0"
-					// Sits above the composer's overlay, which owns the space below it —
-					// but the reported height is stale once the composer is gone, and
-					// would leave this floating in the middle of the screen.
-					style={{
-						bottom: composerBottom + (showComposer ? composerHeight : 0),
-					}}
-					onLayout={(event) =>
-						setAboveComposerHeight(event.nativeEvent.layout.height)
-					}
-				>
-					{pullRequests.length > 0 ? (
-						<View className="px-4 pb-2">
-							<PullRequestsButton
-								onPress={() =>
-									pullRequests.length > 1
-										? router.push({
-												pathname: "/workspace/[id]/pull-requests",
-												params: { id },
-											})
-										: router.push({
-												pathname:
-													"/workspace/[id]/pull-request/[pullRequestId]",
-												params: {
-													id,
-													pullRequestId: String(
-														pullRequests[0]?.prNumber ?? "",
-													),
-												},
-											})
-								}
-								pullRequests={pullRequests}
-							/>
-						</View>
-					) : null}
-					{showComposer ? (
-						<TerminalComposer
-							workspaceId={id}
-							allowAttachments={activeRow?.agentId != null}
-							slashCommands={slashCommands}
-							attachmentTarget={attachmentTarget}
-							onActiveChange={setComposerActive}
-							onHeightChange={setComposerHeight}
-							onCopySelection={() => terminalRef.current?.copySelection()}
-							onQuickKey={handleQuickKey}
-							onSubmit={handleSubmit}
-							ref={composerRef}
-							selectActive={select.active}
-							selectHasSelection={select.hasSelection}
-						/>
-					) : null}
-				</View>
+			{showComposer ? (
+				<TerminalComposer
+					workspaceId={id}
+					allowAttachments={activeRow?.agentId != null}
+					slashCommands={slashCommands}
+					// A cloud workspace exists on screen before anything serves
+					// it; the strip would offer sessions on a sandbox that is not
+					// up yet.
+					sessionTabs={cloud && !workspace ? [] : sessionTabs}
+					onSessionTabPress={pickTerminal}
+					onSessionTabClose={confirmCloseTerminal}
+					onSessionTabCopyId={copyTerminalId}
+					onNewSessionPress={openAddMenu}
+					onAllSessionsPress={openSessions}
+					quickKeysAction={pullRequestAction}
+					onQuickKeysActionPress={openPullRequests}
+					attachmentTarget={attachmentTarget}
+					onActiveChange={setComposerActive}
+					onHeightChange={setComposerHeight}
+					onCopySelection={() => terminalRef.current?.copySelection()}
+					onQuickKey={handleQuickKey}
+					onSubmit={handleSubmit}
+					ref={composerRef}
+					selectActive={select.active}
+					selectHasSelection={select.hasSelection}
+				/>
 			) : null}
 		</View>
 	);
