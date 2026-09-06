@@ -16,7 +16,7 @@ import type {
 	DashboardSidebarCollection,
 	DashboardSidebarPinnedWorkspace,
 	DashboardSidebarProject,
-	DashboardSidebarWorkspace,
+	DashboardSidebarProjectChild,
 } from "../../types";
 import { useDashboardSidebarHoverActions } from "../DashboardSidebarHoverProvider";
 
@@ -24,7 +24,7 @@ interface DashboardSidebarDndProviderProps {
 	/** Projects in their current display order. */
 	projects: DashboardSidebarProject[];
 	pinnedWorkspaces: DashboardSidebarPinnedWorkspace[];
-	sessionWorkspaces: DashboardSidebarWorkspace[];
+	sessionChildren: DashboardSidebarProjectChild[];
 	isSidebarCollapsed: boolean;
 	workspaceShortcutLabels: Map<string, string>;
 	onReorderProjects: (projectIds: string[]) => void;
@@ -34,6 +34,11 @@ interface DashboardSidebarDndProviderProps {
 		projectId: string,
 		collectionId: string | null,
 	) => void;
+	/**
+	 * True while `projects` is a sorted/filtered view rather than the manual
+	 * order — see useSidebarDnd's `disabled` option.
+	 */
+	isDragDisabled?: boolean;
 	children: ReactNode;
 }
 
@@ -46,12 +51,13 @@ interface DashboardSidebarDndProviderProps {
 export function DashboardSidebarDndProvider({
 	projects,
 	pinnedWorkspaces,
-	sessionWorkspaces,
+	sessionChildren,
 	isSidebarCollapsed,
 	workspaceShortcutLabels,
 	onReorderProjects,
 	collections,
 	onMoveProjectToCollection,
+	isDragDisabled = false,
 	children,
 }: DashboardSidebarDndProviderProps) {
 	const {
@@ -65,10 +71,11 @@ export function DashboardSidebarDndProvider({
 	} = useSidebarDnd({
 		projects,
 		pinnedWorkspaces,
-		sessionWorkspaces,
+		sessionChildren,
 		onReorderProjects,
 		collections,
 		onMoveProjectToCollection,
+		disabled: isDragDisabled,
 	});
 
 	// Dragging sweeps the pointer across rows, which would otherwise drive the

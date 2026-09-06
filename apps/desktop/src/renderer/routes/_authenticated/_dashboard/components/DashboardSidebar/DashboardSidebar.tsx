@@ -18,6 +18,7 @@ import {
 	useStarNagCard,
 } from "renderer/components/SidebarCardSlot";
 import { UpdatesPill } from "renderer/components/UpdatesPill";
+import { useV2UserPreferences } from "renderer/hooks/useV2UserPreferences";
 import { useHotkeyDisplay } from "renderer/hotkeys";
 import { OrganizationDropdown } from "renderer/routes/_authenticated/_dashboard/components/TopBar/components/OrganizationDropdown";
 import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
@@ -25,10 +26,12 @@ import { useLocalHostService } from "renderer/routes/_authenticated/providers/Lo
 import { useSidebarSectionsCollapseStore } from "renderer/stores/sidebar-sections-collapse";
 import { CollectionContents } from "./components/CollectionContents";
 import { DashboardSidebarBulkActions } from "./components/DashboardSidebarBulkActions";
+import { DashboardSidebarBulkDeleteMount } from "./components/DashboardSidebarBulkDeleteMount";
 import { DashboardSidebarCloudSection } from "./components/DashboardSidebarCloudSection";
 import { DashboardSidebarCollectionProvider } from "./components/DashboardSidebarCollectionContext";
 import { DashboardSidebarCollectionHeader } from "./components/DashboardSidebarCollectionHeader";
 import { DashboardSidebarHeader } from "./components/DashboardSidebarHeader";
+import { DashboardSidebarHiddenProjects } from "./components/DashboardSidebarHiddenProjects";
 import { DashboardSidebarHoverCardOverlay } from "./components/DashboardSidebarHoverCardOverlay";
 import { DashboardSidebarPinnedSection } from "./components/DashboardSidebarPinnedSection";
 import { DashboardSidebarProjectSection } from "./components/DashboardSidebarProjectSection";
@@ -36,7 +39,6 @@ import { DashboardSidebarSectionRenameProvider } from "./components/DashboardSid
 import { DashboardSidebarSessionsSection } from "./components/DashboardSidebarSessionsSection";
 import { DashboardSidebarWorkspacesHeader } from "./components/DashboardSidebarWorkspacesHeader";
 import { RootDropZone } from "./components/RootDropZone";
-import { SectionDragSpacer } from "./components/SectionDragSpacer";
 import { useV2SetupScriptCard } from "./components/V2SetupScriptCard";
 import { useDashboardSidebarData } from "./hooks/useDashboardSidebarData";
 import { useDashboardSidebarShortcuts } from "./hooks/useDashboardSidebarShortcuts";
@@ -57,8 +59,10 @@ import type {
 	DashboardSidebarProject,
 	DashboardSidebarWorkspace,
 } from "./types";
+import { filterDashboardSidebarProjects } from "./utils/filterDashboardSidebarProjects";
 import { groupProjectsByCollection } from "./utils/groupProjectsByCollection";
 import { getProjectChildrenWorkspaces } from "./utils/projectChildren";
+import { sortDashboardSidebarProjects } from "./utils/sortDashboardSidebarProjects";
 
 interface DashboardSidebarProps {
 	isCollapsed?: boolean;
@@ -151,15 +155,19 @@ export function DashboardSidebar({
 	const {
 		groups,
 		collections,
+		hiddenProjects,
 		pinnedWorkspaces,
 		sessionWorkspaces,
-		sessionTagGroups,
-		ungroupedSessionWorkspaces,
+		sessionChildren,
 		refreshWorkspacePullRequest,
 		toggleProjectCollapsed,
 	} = useDashboardSidebarData();
 	const {
+		deleteSection,
 		reorderProjects,
+		renameSection,
+		setProjectHidden,
+		toggleSectionCollapsed,
 		createCollection,
 		deleteCollection,
 		moveProjectToCollection,
@@ -168,7 +176,11 @@ export function DashboardSidebar({
 		setCollectionIcon,
 		toggleCollectionCollapsed,
 	} = useDashboardSidebarState();
-	// Converts legacy uuid-keyed collections to tag-backed collections in the
+	const showHiddenProject = useCallback(
+		(projectId: string) => setProjectHidden(projectId, false),
+		[setProjectHidden],
+	);
+	// Converts legacy uuid-keyed folders to tag-backed folders in the
 	// background; retries whenever the workspace cache changes.
 	useMigrateLegacySidebarFolders();
 	const navigate = useNavigate();
@@ -181,6 +193,14 @@ export function DashboardSidebar({
 	const workspacesListCollapsed = useSidebarSectionsCollapseStore(
 		(s) => s.collapsed.workspaces,
 	);
+	const { preferences, setSidebarProjectSortMode } = useV2UserPreferences();
+	const sortMode = preferences.sidebarProjectSortMode;
+	const [projectFilterQuery, setProjectFilterQuery] = useState("");
+	// The icon rail hides the Projects header (and its filter input); a
+	// filter left active there would invisibly hide projects.
+	useEffect(() => {
+		if (isCollapsed) setProjectFilterQuery("");
+	}, [isCollapsed]);
 
 	// Collection created from a project's context menu enters rename mode on mount.
 	const [autoRenameCollectionId, setAutoRenameCollectionId] = useState<
@@ -241,9 +261,26 @@ export function DashboardSidebar({
 			.filter((g): g is DashboardSidebarProject => g != null);
 	}, [groups, projectOrder]);
 
+	// Sort, then filter, as derived views: `orderedGroups` and the persisted
+	// tabOrder stay untouched, so Manual restores the drag order exactly.
+	const sortedGroups = useMemo(
+		() =>
+			sortMode === "manual"
+				? orderedGroups
+				: sortDashboardSidebarProjects(orderedGroups, sortMode),
+		[sortMode, orderedGroups],
+	);
+	const displayedGroups = useMemo(
+		() => filterDashboardSidebarProjects(sortedGroups, projectFilterQuery),
+		[sortedGroups, projectFilterQuery],
+	);
+	const displayedProjectIds = useMemo(
+		() => displayedGroups.map((project) => project.id),
+		[displayedGroups],
+	);
 	const { collectionsWithProjects, ungroupedProjects } = useMemo(
-		() => groupProjectsByCollection(collections, orderedGroups),
-		[collections, orderedGroups],
+		() => groupProjectsByCollection(collections, displayedGroups),
+		[collections, displayedGroups],
 	);
 
 	// dnd-kit requires the SortableContext item order to match the rendered
@@ -261,11 +298,21 @@ export function DashboardSidebar({
 		],
 		[collectionsWithProjects, ungroupedProjects, isCollapsed],
 	);
+	const trimmedFilterQuery = projectFilterQuery.trim();
+	const isFilterActive = trimmedFilterQuery !== "";
+	const isDragDisabled = sortMode !== "manual" || isFilterActive;
 
+	// Sorted but unfiltered, so ⌘1–⌘9 targets stay put while typing a query.
+	// The filtered view expands matches through derived objects, so a jump
+	// must not toggle the persisted collapse state while it is active.
 	const workspaceShortcutLabels = useDashboardSidebarShortcuts(
-		orderedGroups,
+		sortedGroups,
 		sessionWorkspaces,
+		sessionChildren,
+		{ revealCollapsed: !isFilterActive },
 	);
+	// Scoped to what the filter actually shows — select-all and range-select
+	// must not reach rows the filter is hiding.
 	const selectableWorkspaceIds = useMemo(() => {
 		const ids = new Set<string>();
 		const addWorkspace = (workspace: DashboardSidebarWorkspace) => {
@@ -276,7 +323,7 @@ export function DashboardSidebar({
 				ids.add(workspace.id);
 			}
 		};
-		for (const project of orderedGroups) {
+		for (const project of displayedGroups) {
 			for (const child of project.children) {
 				if (child.type === "workspace") {
 					addWorkspace(child.workspace);
@@ -292,11 +339,12 @@ export function DashboardSidebar({
 			}
 		}
 		return ids;
-	}, [orderedGroups]);
+	}, [displayedGroups]);
 
 	// Every workspace the sidebar can render (pinned, sessions, project rows) —
 	// the status provider fans out bindings queries and event subscriptions for
-	// these once, instead of per row.
+	// these once, instead of per row. Deliberately unfiltered so subscriptions
+	// don't churn per keystroke.
 	const statusWorkspaces = useMemo<SidebarStatusWorkspaceRef[]>(() => {
 		const byId = new Map<string, SidebarStatusWorkspaceRef>();
 		for (const workspace of pinnedWorkspaces) {
@@ -367,6 +415,7 @@ export function DashboardSidebar({
 			activeWorkspaceId={activeV2WorkspaceId}
 		>
 			<DashboardSidebarCollectionProvider value={collectionContextValue}>
+				<DashboardSidebarBulkDeleteMount />
 				<DashboardSidebarSectionRenameProvider>
 					<DashboardSidebarHoverProvider>
 						<DashboardSidebarWorkspaceStatusProvider
@@ -377,12 +426,13 @@ export function DashboardSidebar({
 						    dashboard layout, which wraps this sidebar. */}
 							<DashboardSidebarHoverCardOverlay>
 								<DashboardSidebarDndProvider
-									projects={orderedGroups}
+									projects={displayedGroups}
 									pinnedWorkspaces={pinnedWorkspaces}
-									sessionWorkspaces={sessionWorkspaces}
+									sessionChildren={sessionChildren}
 									isSidebarCollapsed={isCollapsed}
 									workspaceShortcutLabels={workspaceShortcutLabels}
 									onReorderProjects={handleReorderProjects}
+									isDragDisabled={isDragDisabled}
 									collections={collections}
 									onMoveProjectToCollection={moveProjectToCollection}
 								>
@@ -406,16 +456,21 @@ export function DashboardSidebar({
 											/>
 											<DashboardSidebarSessionsSection
 												sessionWorkspaces={sessionWorkspaces}
-												tagGroups={sessionTagGroups}
-												ungroupedWorkspaces={ungroupedSessionWorkspaces}
 												isCollapsed={isCollapsed}
 												workspaceShortcutLabels={workspaceShortcutLabels}
 												onWorkspaceHover={refreshWorkspacePullRequest}
+												onDeleteSection={deleteSection}
+												onRenameSection={renameSection}
+												onToggleSectionCollapse={toggleSectionCollapsed}
 											/>
 											{!isCollapsed && (
 												<div className="mt-3 first:mt-0">
 													<DashboardSidebarBulkActions projects={orderedGroups}>
 														<DashboardSidebarWorkspacesHeader
+															sortMode={sortMode}
+															onSortModeChange={setSidebarProjectSortMode}
+															filterQuery={projectFilterQuery}
+															onFilterQueryChange={setProjectFilterQuery}
 															onNewCollection={handleNewCollection}
 														/>
 													</DashboardSidebarBulkActions>
@@ -491,7 +546,21 @@ export function DashboardSidebar({
 													</RootDropZone>
 												</SortableContext>
 											)}
-											<SectionDragSpacer />
+											{!isCollapsed && !workspacesListCollapsed && (
+												<DashboardSidebarHiddenProjects
+													projects={hiddenProjects}
+													onShow={showHiddenProject}
+												/>
+											)}
+											{!isCollapsed &&
+												isFilterActive &&
+												displayedGroups.length === 0 && (
+													<div className="select-text cursor-text px-4 py-2 text-xs text-muted-foreground">
+														{t({
+															message: `No projects match "${trimmedFilterQuery}"`,
+														})}
+													</div>
+												)}
 										</OverflowFadeContainer>
 										<SidebarCardSlot
 											isCollapsed={isCollapsed}

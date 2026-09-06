@@ -16,16 +16,15 @@ import {
 	LuUngroup,
 	LuX,
 } from "react-icons/lu";
-import { useBulkWorkspaceDeleteDialog } from "../../hooks/useBulkWorkspaceDeleteDialog";
 import { useBulkWorkspaceMoveActions } from "../../hooks/useBulkWorkspaceMoveActions";
 import { useDashboardSidebarSelection } from "../../providers/DashboardSidebarSelectionProvider";
+import { useDashboardSidebarCollections } from "../DashboardSidebarCollectionContext";
+import { DashboardSidebarProjectBulkToolbar } from "./components/DashboardSidebarProjectBulkToolbar";
+import { useBulkDeleteWorkspacesIntent } from "../../stores/bulkDeleteWorkspacesIntent";
 import type {
 	DashboardSidebarProject,
 	DashboardSidebarWorkspace,
 } from "../../types";
-import { DashboardSidebarBulkDeleteDialog } from "../DashboardSidebarBulkDeleteDialog";
-import { useDashboardSidebarCollections } from "../DashboardSidebarCollectionContext";
-import { DashboardSidebarProjectBulkToolbar } from "./components/DashboardSidebarProjectBulkToolbar";
 
 interface DashboardSidebarBulkActionsProps {
 	projects: DashboardSidebarProject[];
@@ -37,12 +36,8 @@ export function DashboardSidebarBulkActions({
 	children,
 }: DashboardSidebarBulkActionsProps) {
 	const { t } = useLingui();
-	const {
-		clearSelection,
-		removeSelectedWorkspaces,
-		selectedProjectId,
-		selectedProjectIds,
-	} = useDashboardSidebarSelection();
+	const { clearSelection, selectedProjectId, selectedProjectIds } =
+		useDashboardSidebarSelection();
 	const { collections, moveProjectToCollection, createCollectionForProjects } =
 		useDashboardSidebarCollections();
 	const selectedProjects = useMemo(() => {
@@ -88,11 +83,6 @@ export function DashboardSidebarBulkActions({
 		sectionIdByWorkspaceId,
 	});
 
-	const { deleteDialogProps, openDeleteDialog } = useBulkWorkspaceDeleteDialog({
-		selectedWorkspaces,
-		onDeleted: removeSelectedWorkspaces,
-	});
-
 	if (selectedProjects.length > 0) {
 		return (
 			<DashboardSidebarProjectBulkToolbar
@@ -115,6 +105,9 @@ export function DashboardSidebarBulkActions({
 		);
 	}
 
+	const openDeleteDialog = () =>
+		useBulkDeleteWorkspacesIntent.getState().request(selectedWorkspaces);
+
 	return (
 		<>
 			{selectedWorkspaces.length === 0 ? (
@@ -123,7 +116,6 @@ export function DashboardSidebarBulkActions({
 				<div
 					role="toolbar"
 					aria-label={t({
-						id: "dashboard.sidebar.bulkActions.toolbarAriaLabel",
 						message: "Selected workspace actions",
 					})}
 					// Sticky: the toolbar's natural slot (the Workspaces header) can be
@@ -139,7 +131,6 @@ export function DashboardSidebarBulkActions({
 								onClick={clearSelection}
 								className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-fill-hover hover:text-foreground"
 								aria-label={t({
-									id: "dashboard.sidebar.bulkActions.clearSelectionAriaLabel",
 									message: "Clear workspace selection",
 								})}
 							>
@@ -147,15 +138,12 @@ export function DashboardSidebarBulkActions({
 							</button>
 						</TooltipTrigger>
 						<TooltipContent side="bottom">
-							<Trans id="dashboard.sidebar.bulkActions.clearSelection">
-								Clear selection (Esc)
-							</Trans>
+							<Trans>Clear selection (Esc)</Trans>
 						</TooltipContent>
 					</Tooltip>
 
 					<span className="min-w-0 flex-1 truncate pl-1 text-xs font-medium text-foreground">
 						<Plural
-							id="dashboard.sidebar.bulkActions.selectedCount"
 							value={selectedWorkspaces.length}
 							one="# workspace"
 							other="# workspaces"
@@ -172,7 +160,6 @@ export function DashboardSidebarBulkActions({
 										type="button"
 										className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-fill-hover hover:text-foreground"
 										aria-label={t({
-											id: "dashboard.sidebar.bulkActions.moveToGroupAriaLabel",
 											message: plural(selectedWorkspaces.length, {
 												one: "Move # selected workspace to a group",
 												other: "Move # selected workspaces to a group",
@@ -184,17 +171,13 @@ export function DashboardSidebarBulkActions({
 								</DropdownMenuTrigger>
 							</TooltipTrigger>
 							<TooltipContent side="bottom">
-								<Trans id="dashboard.sidebar.bulkActions.moveToGroup">
-									Move to group
-								</Trans>
+								<Trans>Move to group</Trans>
 							</TooltipContent>
 						</Tooltip>
 						<DropdownMenuContent align="end" side="bottom" className="w-48">
 							<DropdownMenuItem onSelect={createGroupFromSelection}>
 								<LuFolderPlus className="size-4" />
-								<Trans id="dashboard.sidebar.bulkActions.newGroup">
-									New group
-								</Trans>
+								<Trans>New group</Trans>
 							</DropdownMenuItem>
 							{sectionMenuState === "populated" && <DropdownMenuSeparator />}
 							{sections?.map((section) => (
@@ -216,13 +199,9 @@ export function DashboardSidebarBulkActions({
 							{sectionMenuState !== "populated" && (
 								<DropdownMenuItem disabled>
 									{sectionMenuState === "empty" ? (
-										<Trans id="dashboard.sidebar.bulkActions.noGroupsYet">
-											No groups yet
-										</Trans>
+										<Trans>No groups yet</Trans>
 									) : (
-										<Trans id="dashboard.sidebar.bulkActions.loadingGroups">
-											Loading groups…
-										</Trans>
+										<Trans>Loading groups…</Trans>
 									)}
 								</DropdownMenuItem>
 							)}
@@ -237,7 +216,6 @@ export function DashboardSidebarBulkActions({
 								onClick={ungroupSelection}
 								className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-fill-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-35"
 								aria-label={t({
-									id: "dashboard.sidebar.bulkActions.ungroupAriaLabel",
 									message: "Ungroup selected workspaces",
 								})}
 							>
@@ -245,7 +223,7 @@ export function DashboardSidebarBulkActions({
 							</button>
 						</TooltipTrigger>
 						<TooltipContent side="bottom">
-							<Trans id="dashboard.sidebar.bulkActions.ungroup">Ungroup</Trans>
+							<Trans>Ungroup</Trans>
 						</TooltipContent>
 					</Tooltip>
 
@@ -256,7 +234,6 @@ export function DashboardSidebarBulkActions({
 								onClick={openDeleteDialog}
 								className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
 								aria-label={t({
-									id: "dashboard.sidebar.bulkActions.deleteAriaLabel",
 									message: "Delete selected workspaces",
 								})}
 							>
@@ -264,13 +241,11 @@ export function DashboardSidebarBulkActions({
 							</button>
 						</TooltipTrigger>
 						<TooltipContent side="bottom">
-							<Trans id="dashboard.sidebar.bulkActions.delete">Delete</Trans>
+							<Trans>Delete</Trans>
 						</TooltipContent>
 					</Tooltip>
 				</div>
 			)}
-
-			<DashboardSidebarBulkDeleteDialog {...deleteDialogProps} />
 		</>
 	);
 }
