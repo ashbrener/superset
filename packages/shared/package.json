@@ -16,9 +16,17 @@
 			"types": "./src/automation-matching/index.ts",
 			"default": "./src/automation-matching/index.ts"
 		},
+		"./environment-secrets": {
+			"types": "./src/environment-secrets.ts",
+			"default": "./src/environment-secrets.ts"
+		},
 		"./automation-triggers": {
 			"types": "./src/automation-triggers.ts",
 			"default": "./src/automation-triggers.ts"
+		},
+		"./cloud-agent-launch": {
+			"types": "./src/cloud-agent-launch.ts",
+			"default": "./src/cloud-agent-launch.ts"
 		},
 		"./constants": {
 			"types": "./src/constants.ts",
@@ -48,6 +56,10 @@
 			"types": "./src/sentry.ts",
 			"default": "./src/sentry.ts"
 		},
+		"./sentry-throttle": {
+			"types": "./src/sentry-throttle.ts",
+			"default": "./src/sentry-throttle.ts"
+		},
 		"./slash-commands": {
 			"types": "./src/slash-commands.ts",
 			"default": "./src/slash-commands.ts"
@@ -59,6 +71,10 @@
 		"./dev-credentials": {
 			"types": "./src/dev-credentials.ts",
 			"default": "./src/dev-credentials.ts"
+		},
+		"./dev-app-profile": {
+			"types": "./src/dev-app-profile.ts",
+			"default": "./src/dev-app-profile.ts"
 		},
 		"./desktop-notices": {
 			"types": "./src/desktop-notices.ts",
@@ -196,10 +212,6 @@
 			"types": "./src/tunnel-protocol.ts",
 			"default": "./src/tunnel-protocol.ts"
 		},
-		"./tunnel-v2-protocol": {
-			"types": "./src/tunnel-v2-protocol.ts",
-			"default": "./src/tunnel-v2-protocol.ts"
-		},
 		"./port-forward-mux": {
 			"types": "./src/port-forward-mux.ts",
 			"default": "./src/port-forward-mux.ts"
@@ -247,6 +259,10 @@
 		"./terminal-session-handoff": {
 			"types": "./src/terminal-session-handoff.ts",
 			"default": "./src/terminal-session-handoff.ts"
+		},
+		"./theme-colors": {
+			"types": "./src/themes/types.ts",
+			"default": "./src/themes/types.ts"
 		}
 	},
 	"scripts": {
@@ -256,6 +272,7 @@
 	},
 	"dependencies": {
 		"@date-fns/tz": "1.4.1",
+		"@lingui/core": "6.6.0",
 		"@superset/i18n": "workspace:*",
 		"culori": "4.0.2",
 		"friendly-words": "1.3.1",

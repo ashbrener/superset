@@ -103,23 +103,12 @@ export const V2_NEW_USER_V1_EXPERIMENT_START = "2026-06-08T06:59:00.000Z";
 export const V2_NEW_USER_V2_DEFAULT_START = "2026-07-09T17:00:00.000Z";
 
 export const FEATURE_FLAGS = {
-	/** Gates access to experimental Electric SQL tasks feature. */
-	ELECTRIC_TASKS_ACCESS: "electric-tasks-access",
 	/** Gates access to the experimental mobile-first agents UI on web. */
 	WEB_AGENTS_UI_ACCESS: "web-agents-ui-access",
 	/** Gates access to Cloud features (environment variables, sandboxes). */
 	CLOUD_ACCESS: "cloud-access",
 	/** When enabled, blocks remote agent execution on the desktop (e.g., for enterprise orgs). */
 	DISABLE_REMOTE_AGENT: "disable-remote-agent",
-	/**
-	 * Per-user override for the relay base URL. Payload shape:
-	 * `{ "url": "https://..." }`. When set, both the host-service tunnel and
-	 * the desktop renderer's client-side WS opens route through this URL
-	 * instead of `env.RELAY_URL`. Lets us A/B-test alternative relay
-	 * implementations (e.g. Cloudflare Durable Objects) without changing
-	 * defaults for other users.
-	 */
-	RELAY_URL_OVERRIDE: "relay-url-override",
 	/**
 	 * Paces the v1→v2 auto-migration rollout (percentage ramp + high-profile
 	 * org exclusions). Gates only NEW migrations on the v1 surface — post-flip
@@ -260,6 +249,22 @@ export const SANDBOX_WORKSPACE_PATH = "/workspace";
  * a pre-migrated template alongside it.
  */
 export const SANDBOX_HOST_DB_PATH = "/data/host.db";
+
+export const SANDBOX_IMAGE_NAME = "superset-hostsvc";
+
+export const SHARED_ENVIRONMENT_ORGANIZATION_ID =
+	"00000000-0000-0000-0000-000000000000";
+
+export const SHARED_ENVIRONMENT_NAME = "Default";
+
+/**
+ * Every cloud workspace clones this. Environments cannot carry repositories yet,
+ * so there is nothing per-workspace to resolve and no project to pick.
+ */
+export const CLOUD_WORKSPACE_REPO = {
+	owner: "superset-sh",
+	name: "superset",
+} as const;
 
 // Terminal identity presented to shell programs via TERM_PROGRAM. kitty:
 // agent TUIs (claude-code especially) tune wheel-scroll compensation per

@@ -7,6 +7,7 @@ export type SidebarWorkspaceRow = Pick<
 	HostShapedWorkspace,
 	"id" | "projectId" | "type" | "hostId"
 >;
+import { getPrependTabOrder } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal";
 
 /**
  * Pure sidebar local-state mutations, kept free of React/Electron imports so
@@ -62,6 +63,55 @@ export function tombstoneSidebarWorkspaceRecord(
 		// workspace would otherwise reappear pre-pinned.
 		draft.sidebarState.pinnedAt = null;
 		draft.paneLayout = createEmptyPaneLayout();
+	});
+}
+
+/**
+ * Puts a project in the sidebar. A hidden row counts as absent: every path
+ * that would add the project (setting it up on this device, opening one of
+ * its workspaces, an agent creating a worktree in it) reveals it again, the
+ * same way re-adding a removed project used to.
+ */
+export function ensureSidebarProjectRecord(
+	collections: Pick<AppCollections, "v2SidebarProjects">,
+	projectId: string,
+): void {
+	const existing = collections.v2SidebarProjects.get(projectId);
+	if (existing) {
+		if (existing.isHidden) {
+			collections.v2SidebarProjects.update(projectId, (draft) => {
+				draft.isHidden = false;
+			});
+		}
+		return;
+	}
+
+	collections.v2SidebarProjects.insert({
+		projectId,
+		createdAt: new Date(),
+		// Prepend, matching new workspaces: the project you just added is
+		// the one you're about to work in.
+		tabOrder: getPrependTabOrder([
+			...collections.v2SidebarProjects.state.values(),
+		]),
+		isCollapsed: false,
+		isHidden: false,
+	});
+}
+
+/**
+ * Hides or shows a project without touching its workspaces, sections, pins or
+ * order, so a hidden project comes back exactly as it was left. Hiding is the
+ * reversible alternative to deleting the project: nothing on any host changes.
+ */
+export function setSidebarProjectHidden(
+	collections: Pick<AppCollections, "v2SidebarProjects">,
+	projectId: string,
+	hidden: boolean,
+): void {
+	if (!collections.v2SidebarProjects.get(projectId)) return;
+	collections.v2SidebarProjects.update(projectId, (draft) => {
+		draft.isHidden = hidden;
 	});
 }
 

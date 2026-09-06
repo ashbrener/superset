@@ -64,6 +64,10 @@ function rowToBinding(row: BindingRow): TerminalAgentBinding {
  */
 const DEATH_GASP_DETACH_WINDOW_MS = 30_000;
 
+/** The root db handle or an open transaction, so a caller that also writes
+ * the terminal row can stamp the binding inside that same transaction. */
+export type BindingDb = Pick<HostDb, "select" | "update">;
+
 /**
  * Mark a binding's agent session as ended without deleting the row, so its
  * `agentSessionId` survives for resume. "terminal-exited" is sticky: a
@@ -73,7 +77,7 @@ const DEATH_GASP_DETACH_WINDOW_MS = 30_000;
  * the workspaceId when a row was updated.
  */
 export function markTerminalAgentBindingEnded(
-	db: HostDb,
+	db: BindingDb,
 	terminalId: string,
 	reason: TerminalAgentEndReason,
 	endedAt: number = Date.now(),
@@ -90,13 +94,20 @@ export function markTerminalAgentBindingEnded(
 	if (!row) return undefined;
 
 	if (row.endedAt !== null) {
+		// Two upgrades may rewrite an ended row's reason (never its `endedAt`):
+		// a detach inside the death-gasp window was the agent's goodbye as its
+		// pty died, and a dispose after "terminal-exited" is the user killing a
+		// session auto-resume would otherwise bring back. "resumed" and an
+		// older "detached" are final.
 		const isDeathGaspDetach =
 			reason === "terminal-exited" &&
 			row.endReason === "detached" &&
 			endedAt - row.endedAt <= DEATH_GASP_DETACH_WINDOW_MS;
-		if (!isDeathGaspDetach) return undefined;
+		const isDisposeOfResumable =
+			reason === "disposed" && row.endReason === "terminal-exited";
+		if (!isDeathGaspDetach && !isDisposeOfResumable) return undefined;
 		db.update(terminalAgentBindings)
-			.set({ endReason: "terminal-exited" })
+			.set({ endReason: reason })
 			.where(eq(terminalAgentBindings.terminalId, terminalId))
 			.run();
 		return { workspaceId: row.workspaceId };
@@ -123,11 +134,12 @@ export function getTerminalAgentBindingSessionId(
 }
 
 /**
- * A dead terminal's binding is resumable when: agent session id captured, the
- * terminal died under the agent ("terminal-exited") rather than the agent
- * detaching cleanly, and the session progressed past its start — agents only
- * persist a conversation once it has a message, so resuming a never-prompted
- * session fails with "no conversation found".
+ * A dead terminal's binding is resumable when: agent session id captured and
+ * the terminal died under the agent ("terminal-exited") rather than the agent
+ * detaching cleanly. A session still at "Attached" (started, never prompted)
+ * qualifies too: the relaunch checks the harness's store and starts the agent
+ * fresh when there is no conversation to resume — see
+ * resumeTerminalAgentSession.
  */
 function resumeCandidatePredicate(workspaceId: string, terminalId: string) {
 	return and(
@@ -136,7 +148,6 @@ function resumeCandidatePredicate(workspaceId: string, terminalId: string) {
 		isNotNull(terminalAgentBindings.endedAt),
 		eq(terminalAgentBindings.endReason, "terminal-exited"),
 		isNotNull(terminalAgentBindings.agentSessionId),
-		ne(terminalAgentBindings.lastEventType, "Attached"),
 	);
 }
 
