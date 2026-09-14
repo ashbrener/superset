@@ -1,24 +1,5 @@
 import { electronTrpcClient } from "renderer/lib/trpc-client";
-
-const PREFIX = "router-history:";
-
-/**
- * Which stored history keys belong to windows that no longer exist.
- *
- * Split out from the sweep so the rule is testable without localStorage or the
- * main process. The unprefixed "router-history" key is deliberately never
- * returned: it is the pre-multi-window record the first restored window still
- * inherits.
- */
-export function selectStaleHistoryKeys(
-	storedKeys: string[],
-	liveWindowKeys: string[],
-): string[] {
-	const live = new Set(liveWindowKeys);
-	return storedKeys.filter(
-		(key) => key.startsWith(PREFIX) && !live.has(key.slice(PREFIX.length)),
-	);
-}
+import { selectStaleHistoryKeys } from "./selectStaleHistoryKeys";
 
 /**
  * Drop router history belonging to windows that no longer exist.

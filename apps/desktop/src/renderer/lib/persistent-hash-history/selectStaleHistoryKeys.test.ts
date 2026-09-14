@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { selectStaleHistoryKeys } from "./sweepDeadWindowHistories";
+import { selectStaleHistoryKeys } from "./selectStaleHistoryKeys";
 
 describe("selectStaleHistoryKeys", () => {
 	test("keeps history for windows that still exist", () => {
