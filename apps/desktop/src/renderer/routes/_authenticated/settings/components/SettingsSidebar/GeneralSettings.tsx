@@ -26,7 +26,8 @@ import {
 	HiOutlineUser,
 	HiOutlineUserGroup,
 } from "react-icons/hi2";
-import { LuGitBranch, LuKeyboard } from "react-icons/lu";
+import { LuGitBranch, LuKeyboard, LuKeyRound } from "react-icons/lu";
+import { useHostsNeedingUpdateCount } from "renderer/hooks/host-version/useHostsNeedingUpdate";
 import { useIsV2CloudEnabled } from "renderer/hooks/useIsV2CloudEnabled";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import type { SettingsSection } from "renderer/stores/settings-state";
@@ -51,6 +52,7 @@ type SettingsRoute =
 	| "/settings/agents"
 	| "/settings/terminal"
 	| "/settings/links"
+	| "/settings/agent-accounts"
 	| "/settings/experimental"
 	| "/settings/integrations"
 	| "/settings/billing"
@@ -150,7 +152,7 @@ const SECTION_GROUPS: SectionGroup[] = [
 				id: "/settings/agents",
 				section: "agents",
 				label: msg({
-					message: "Agents",
+					message: "Agent commands",
 				}),
 				icon: <HiOutlineCpuChip className="h-4 w-4" />,
 				fullWidth: true,
@@ -178,6 +180,29 @@ const SECTION_GROUPS: SectionGroup[] = [
 					message: "Browser",
 				}),
 				icon: <HiOutlineGlobeAlt className="h-4 w-4" />,
+			},
+		],
+	},
+	{
+		label: msg({
+			message: "Cloud",
+		}),
+		items: [
+			{
+				id: "/settings/environments",
+				section: "environments",
+				label: msg({
+					message: "Environments",
+				}),
+				icon: <HiOutlineCube className="h-4 w-4" />,
+			},
+			{
+				id: "/settings/agent-accounts",
+				section: "agentAccounts",
+				label: msg({
+					message: "Agents",
+				}),
+				icon: <LuKeyRound className="h-4 w-4" />,
 			},
 		],
 	},
@@ -219,14 +244,6 @@ const SECTION_GROUPS: SectionGroup[] = [
 				}),
 				icon: <HiOutlineComputerDesktop className="h-4 w-4" />,
 				fullWidth: true,
-			},
-			{
-				id: "/settings/environments",
-				section: "environments",
-				label: msg({
-					message: "Environments",
-				}),
-				icon: <HiOutlineCube className="h-4 w-4" />,
 			},
 			{
 				id: "/settings/integrations",
@@ -301,6 +318,7 @@ export const FULL_WIDTH_SECTION_PATHS: readonly string[] =
 
 export function GeneralSettings({ matchCounts }: GeneralSettingsProps) {
 	const matchRoute = useMatchRoute();
+	const hostsNeedingUpdate = useHostsNeedingUpdateCount();
 	const { data: platform } = electronTrpc.window.getPlatform.useQuery();
 	const isMac = platform === "darwin";
 	const isV2CloudEnabled = useIsV2CloudEnabled();
@@ -351,6 +369,26 @@ export function GeneralSettings({ matchCounts }: GeneralSettingsProps) {
 												{count}
 											</span>
 										)}
+										{!matchCounts &&
+											section.section === "hosts" &&
+											hostsNeedingUpdate > 0 && (
+												<span
+													className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-amber-700 ring-1 ring-inset ring-amber-500/35 dark:text-amber-300"
+													title={i18n._({
+														...msg({
+															message:
+																"{count} hosts run an older host service than this app",
+														}),
+														values: { count: hostsNeedingUpdate },
+													})}
+												>
+													<span
+														aria-hidden="true"
+														className="size-1.5 rounded-full bg-amber-500"
+													/>
+													{hostsNeedingUpdate}
+												</span>
+											)}
 									</Link>
 								);
 							})}

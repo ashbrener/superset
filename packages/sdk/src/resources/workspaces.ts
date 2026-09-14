@@ -2,6 +2,7 @@ import type { APIPromise } from "../core/api-promise";
 import { SupersetError } from "../core/error";
 import { APIResource } from "../core/resource";
 import type { RequestOptions } from "../internal/request-options";
+import { uuid4 } from "../internal/utils/uuid";
 
 /** Workspace row as served by the owning host's `workspace.list`. */
 export interface HostWorkspaceRow {
@@ -14,7 +15,12 @@ export interface HostWorkspaceRow {
 	hostId: string;
 	name: string;
 	branch: string;
-	type: "main" | "worktree" | "session";
+	/**
+	 * "local" shares the project's primary checkout; "worktree" owns its own;
+	 * "session" is project-less. Hosts before 1.29 serve the checkout row as
+	 * "main".
+	 */
+	type: "local" | "worktree" | "session" | "main";
 	createdByUserId: string | null;
 	taskId: string | null;
 	createdAt: Date;
@@ -64,7 +70,8 @@ export class Workspaces extends APIResource {
 	 * and/or run a one-off shell `command` in the worktree.
 	 *
 	 * The host service must be running and reachable via the relay tunnel.
-	 * Provide exactly one of `branch` or `pr`.
+	 * Use `checkout: "local"` without branch or PR to share the project checkout.
+	 * Otherwise provide a branch or PR for an isolated worktree.
 	 */
 	create(
 		params: WorkspaceCreateParams,
@@ -72,9 +79,17 @@ export class Workspaces extends APIResource {
 	): APIPromise<WorkspaceCreateResult> {
 		return this._client.hostMutation<WorkspaceCreateResult>(
 			params.hostId,
-			{ method: "workspaces.create", procedure: "workspaces.create" },
 			{
+				method: "workspaces.create",
+				procedure:
+					params.checkout === "local"
+						? "workspaces.createLocal"
+						: "workspaces.create",
+			},
+			{
+				id: params.id ?? (params.checkout === "local" ? uuid4() : undefined),
 				projectId: params.projectId,
+				checkout: params.checkout,
 				name: params.name,
 				branch: params.branch,
 				pr: params.pr,
@@ -168,7 +183,7 @@ export interface HostWorkspace {
 	projectId: string;
 	/** Absolute path on the host filesystem. */
 	path?: string;
-	type?: "main" | "worktree";
+	type?: HostWorkspaceRow["type"];
 }
 
 export type WorkspaceListResponse = Array<Workspace>;
@@ -183,13 +198,22 @@ export interface WorkspaceListParams {
 }
 
 export interface WorkspaceCreateParams {
+	/** Client UUID for retries. Automatically generated for each Local create call. */
+	id?: string;
 	/** The host machineId to create the workspace on (see `hosts.list()`). */
 	hostId: string;
 	/** Project UUID (see `projects.list()`). */
 	projectId: string;
 	/** Workspace name. */
 	name: string;
-	/** Git branch the workspace tracks. Required unless `pr` is set. */
+	/**
+	 * "worktree" (default) checks out `branch` in its own worktree. "local"
+	 * registers the workspace on the project's primary checkout — no clone,
+	 * worktree, or branch switch — so `branch`, `pr` and `baseBranch` must be
+	 * omitted.
+	 */
+	checkout?: "worktree" | "local";
+	/** Git branch the workspace tracks. Required unless `pr` or `checkout: "local"` is set. */
 	branch?: string;
 	/** Pull request number — server checks out the verified PR head and derives the branch. */
 	pr?: number;
@@ -229,7 +253,7 @@ export interface WorkspaceCreateResult {
 		hostId: string;
 		name: string;
 		branch: string;
-		type: "main" | "worktree" | "session";
+		type: HostWorkspaceRow["type"];
 		createdByUserId: string | null;
 		taskId: string | null;
 		createdAt: Date;
@@ -270,7 +294,7 @@ export interface WorkspaceUpdateResult {
 	organizationId: string;
 	projectId: string;
 	hostId: string;
-	type: "main" | "worktree";
+	type: HostWorkspaceRow["type"];
 	createdByUserId: string | null;
 	taskId: string | null;
 	createdAt: Date;

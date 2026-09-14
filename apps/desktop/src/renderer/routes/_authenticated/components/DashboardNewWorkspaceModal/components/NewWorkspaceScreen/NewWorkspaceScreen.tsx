@@ -44,6 +44,7 @@ import { useAgentLaunchPreferences } from "renderer/hooks/useAgentLaunchPreferen
 import { useAgentModelPreference } from "renderer/hooks/useAgentModelPreference";
 import { useAgentModePreference } from "renderer/hooks/useAgentModePreference";
 import { useRelayUrl } from "renderer/hooks/useRelayUrl";
+import { useSelectedHostProjectIds } from "renderer/hooks/useSelectedHostProjectIds";
 import { useV2AgentChoices } from "renderer/hooks/useV2AgentChoices";
 import { CLOUD_AGENT_CHOICES } from "renderer/hooks/useV2AgentChoices/cloud-agent-choices";
 import { track } from "renderer/lib/analytics";
@@ -69,6 +70,7 @@ import {
 import { DevicePicker } from "../DashboardNewWorkspaceForm/components/DevicePicker";
 import { CLOUD_HOST_ID } from "../DashboardNewWorkspaceForm/components/DevicePicker/DevicePicker";
 import { useWorkspaceHostOptions } from "../DashboardNewWorkspaceForm/components/DevicePicker/hooks/useWorkspaceHostOptions";
+import { CheckoutPickerPill } from "../DashboardNewWorkspaceForm/PromptGroup/components/CheckoutPickerPill";
 import { CompareBaseBranchPicker } from "../DashboardNewWorkspaceForm/PromptGroup/components/CompareBaseBranchPicker";
 import { EnvironmentPickerPill } from "../DashboardNewWorkspaceForm/PromptGroup/components/EnvironmentPickerPill";
 import { GitHubIssueLinkCommand } from "../DashboardNewWorkspaceForm/PromptGroup/components/GitHubIssueLinkCommand";
@@ -92,13 +94,13 @@ import {
 	PILL_BUTTON_CLASS,
 	type WorkspaceCreateAgent,
 } from "../DashboardNewWorkspaceForm/PromptGroup/types";
-import { useSelectedHostProjectIds } from "../DashboardNewWorkspaceModalContent/hooks/useSelectedHostProjectIds";
 import { SymmetricResizeHandles } from "../SymmetricResizeHandles";
 import { AttachmentCard } from "./components/AttachmentCard";
 import { SamplePromptCards } from "./components/SamplePromptCards";
 import { SamplePrompts } from "./components/SamplePrompts";
 import { PROMPT_PLACEHOLDERS } from "./components/SamplePrompts/constants";
 import { SupersetIcon } from "./components/SupersetIcon";
+import { useProjectPreselection } from "./hooks/useProjectPreselection";
 import { useSamplePromptSelection } from "./hooks/useSamplePromptSelection";
 
 /** Nested prefixes of one fixed pool — only the form factor varies by arm. */
@@ -119,18 +121,19 @@ interface NewWorkspaceScreenProps {
 	preSelectedProjectId: string | null;
 	/** Open with "No project" (session) preselected. */
 	preSelectedSession?: boolean;
+	/** Open targeting this host instead of the remembered one. */
+	preSelectedHostId?: string | null;
 }
 
 /**
- * Experiment test arm (new-workspace-screen flag): a purpose-built full-screen
- * take on workspace creation for new users — heading, sample prompts, and a
- * minimal composer. Independent of the control modal's PromptGroup so the two
- * arms can evolve separately.
+ * The v2 workspace-creation surface: heading, sample prompts, and a minimal
+ * composer, filling the window rather than a dialog.
  */
 export function NewWorkspaceScreen({
 	isOpen,
 	preSelectedProjectId,
 	preSelectedSession = false,
+	preSelectedHostId = null,
 }: NewWorkspaceScreenProps) {
 	const { t } = useLingui();
 	const navigate = useNavigate();
@@ -256,59 +259,19 @@ export function NewWorkspaceScreen({
 		[hostProjects, setUpProjectIds],
 	);
 
-	// Apply the URL preselection exactly once (ref-guarded like the control
-	// modal) — re-applying on every draft change would snap the picker back
-	// and make switching projects impossible.
-	const appliedPreSelectionRef = useRef<string | null>(null);
-	const appliedSessionPreselectionRef = useRef(false);
-	// Re-arm per intent so a second session-open cycle on a reused screen
-	// instance applies again.
-	useEffect(() => {
-		if (!preSelectedSession) appliedSessionPreselectionRef.current = false;
-	}, [preSelectedSession]);
-	useEffect(() => {
-		if (!preSelectedProjectId) appliedPreSelectionRef.current = null;
-	}, [preSelectedProjectId]);
-	useEffect(() => {
-		if (!isOpen || !areProjectsReady) return;
-		if (preSelectedSession && !appliedSessionPreselectionRef.current) {
-			appliedSessionPreselectionRef.current = true;
-			selectSession();
-			return;
-		}
-		const isValid = (id: string | null | undefined) =>
-			Boolean(id && projects.some((project) => project.id === id));
-		if (
-			preSelectedProjectId &&
-			preSelectedProjectId !== appliedPreSelectionRef.current &&
-			isValid(preSelectedProjectId)
-		) {
-			appliedPreSelectionRef.current = preSelectedProjectId;
-			selectProject(preSelectedProjectId);
-			return;
-		}
-		// An explicit "No project" (session) choice must survive project-list
-		// updates — never auto-select over it.
-		if (draft.isSession) return;
-		if (isValid(draft.selectedProjectId)) return;
-		const { lastProjectId } = useV2WorkspaceCreateDefaultsStore.getState();
-		updateDraft({
-			selectedProjectId: isValid(lastProjectId)
-				? lastProjectId
-				: (projects[0]?.id ?? null),
-		});
-	}, [
+	const isProjectPreselectionPending = useProjectPreselection({
 		isOpen,
 		areProjectsReady,
+		projects,
 		preSelectedProjectId,
 		preSelectedSession,
-		draft.selectedProjectId,
-		draft.isSession,
-		projects,
+		selectedProjectId: draft.selectedProjectId,
+		isSession: draft.isSession,
+		lastProjectId: useV2WorkspaceCreateDefaultsStore.getState().lastProjectId,
 		selectProject,
 		selectSession,
 		updateDraft,
-	]);
+	});
 
 	const storedComposerWidth = useNewWorkspaceWidthStore(
 		(state) => state.screenWidth,
@@ -368,16 +331,30 @@ export function NewWorkspaceScreen({
 	} = useLinkedContext(draft.linkedIssues, updateDraft);
 
 	// Restore the last-used launch host once per mount, like the modal does.
+	// A host named in the URL (the sidebar's Cloud "+") wins, and applies when
+	// it arrives rather than only at mount — this screen stays mounted across
+	// navigations to it.
 	const appliedPersistedHostRef = useRef(false);
+	const appliedPreSelectedHostRef = useRef<string | null>(null);
 	useEffect(() => {
-		if (!isOpen || appliedPersistedHostRef.current) return;
+		if (!isOpen) return;
+		if (
+			preSelectedHostId &&
+			preSelectedHostId !== appliedPreSelectedHostRef.current
+		) {
+			appliedPreSelectedHostRef.current = preSelectedHostId;
+			appliedPersistedHostRef.current = true;
+			updateDraft({ hostId: preSelectedHostId });
+			return;
+		}
+		if (appliedPersistedHostRef.current) return;
 		appliedPersistedHostRef.current = true;
 		const persistedHostId =
 			useV2WorkspaceCreateDefaultsStore.getState().lastHostId;
 		if (typeof persistedHostId === "string") {
 			updateDraft({ hostId: persistedHostId });
 		}
-	}, [isOpen, updateDraft]);
+	}, [isOpen, preSelectedHostId, updateDraft]);
 
 	// Reset baseBranch on project or host change, defaulting to the user's
 	// last selected branch for that project — the draft store is global, so a
@@ -431,12 +408,10 @@ export function NewWorkspaceScreen({
 		promptCardsVariant === null ? "rows" : PROMPT_LAYOUTS[promptCardsVariant];
 
 	// One signal drives both the prompt tier and the dismiss affordance: has
-	// this person shipped anything yet. `main` is auto-created for every new
-	// account, so it cannot count.
+	// this person shipped anything yet. Every workspace is something they
+	// created — nothing seeds one for them.
 	const { workspaces: hostWorkspaces } = useHostWorkspaces();
-	const hasRealWorkspace = hostWorkspaces.some(
-		(workspace) => workspace.type !== "main",
-	);
+	const hasRealWorkspace = hostWorkspaces.length > 0;
 
 	const samplePromptTier = hasRealWorkspace ? "returning" : "first-run";
 	const { prompts: samplePrompts, isPending: samplePromptsPending } =
@@ -466,25 +441,11 @@ export function NewWorkspaceScreen({
 	const { selectedAgent, setSelectedAgent } =
 		useAgentLaunchPreferences<WorkspaceCreateAgent>({
 			agentStorageKey: AGENT_STORAGE_KEY,
-			defaultAgent: "none",
-			fallbackAgent: "none",
+			defaultAgent: selectableAgentIds[0] ?? "none",
+			fallbackAgent: selectableAgentIds[0] ?? "none",
 			validAgents: ["none", ...selectableAgentIds],
 			agentsReady: v2AgentsFetched,
 		});
-
-	// Same "none" → first-agent promotion as the control modal: new users land
-	// here with no stored preference, and the screen must not default to no agent.
-	useEffect(() => {
-		if (!v2AgentsFetched) return;
-		if (selectedAgent !== "none") return;
-		const stored =
-			typeof window !== "undefined"
-				? window.localStorage.getItem(AGENT_STORAGE_KEY)
-				: null;
-		if (stored === "none") return;
-		const first = selectableAgentIds[0];
-		if (first) setSelectedAgent(first);
-	}, [v2AgentsFetched, selectableAgentIds, selectedAgent, setSelectedAgent]);
 
 	const selectedPresetId = useMemo(() => {
 		const agent = v2Agents.find((candidate) => candidate.id === selectedAgent);
@@ -576,14 +537,15 @@ export function NewWorkspaceScreen({
 
 	const { otherHosts } = useWorkspaceHostOptions();
 	const submitBlocker = useMemo<string | null>(() => {
-		if (!projectId && !draft.isSession)
+		const selectedHostId = draft.hostId ?? machineId;
+		// A cloud workspace is provisioned by the API from the one cloud repo:
+		// no host whose readiness could block it, and no project either — the
+		// picker is hidden for cloud, so requiring one is unanswerable.
+		if (selectedHostId === CLOUD_HOST_ID) return null;
+		if (isProjectPreselectionPending || (!selectedProject && !draft.isSession))
 			return t({
 				message: "Select a project",
 			});
-		const selectedHostId = draft.hostId ?? machineId;
-		// A cloud workspace is provisioned on submit, so there is no host whose
-		// readiness could block it.
-		if (selectedHostId === CLOUD_HOST_ID) return null;
 		if (!selectedHostId)
 			return t({
 				message: "No active host",
@@ -601,7 +563,8 @@ export function NewWorkspaceScreen({
 		}
 		return null;
 	}, [
-		projectId,
+		isProjectPreselectionPending,
+		selectedProject,
 		draft.isSession,
 		draft.hostId,
 		machineId,
@@ -697,7 +660,14 @@ export function NewWorkspaceScreen({
 			</AnimatePresence>
 			{/* no-drag + clear of the page's window-drag strip (which ends at
 			    right-12) so the button actually receives clicks. */}
-			<div className="no-drag absolute right-3 top-2.5 z-10 flex items-center gap-0.5">
+			<div
+				className="no-drag absolute top-2.5 z-10 flex items-center gap-0.5"
+				// Clear of the window-controls overlay on Windows and Linux; zero
+				// extra where there is none.
+				style={{
+					right: "calc(0.75rem + (100vw - env(titlebar-area-width, 100vw)))",
+				}}
+			>
 				{selectedProject && !needsSetup && (
 					<Tooltip>
 						<TooltipTrigger asChild>
@@ -1052,12 +1022,27 @@ export function NewWorkspaceScreen({
 								/>
 							)}
 							{draft.linkedPR ? (
-								<span className="flex items-center gap-1 text-xs text-muted-foreground">
-									<LuGitPullRequest className="size-3 shrink-0" />
-									<Trans>based off PR #{draft.linkedPR.prNumber}</Trans>
-								</span>
-							) : draft.isSession ? null : (
-								<CompareBaseBranchPicker {...pickerProps} />
+								<>
+									<CheckoutPickerPill
+										checkout="worktree"
+										onSelectCheckout={() => {}}
+										disabled
+									/>
+									<span className="flex items-center gap-1 text-xs text-muted-foreground">
+										<LuGitPullRequest className="size-3 shrink-0" />
+										<Trans>based off PR #{draft.linkedPR.prNumber}</Trans>
+									</span>
+								</>
+							) : draft.isSession || draft.hostId === CLOUD_HOST_ID ? null : (
+								<>
+									<CheckoutPickerPill
+										checkout={draft.checkout}
+										onSelectCheckout={(checkout) => updateDraft({ checkout })}
+									/>
+									{draft.checkout === "worktree" && (
+										<CompareBaseBranchPicker {...pickerProps} />
+									)}
+								</>
 							)}
 						</div>
 						{needsSetup && (

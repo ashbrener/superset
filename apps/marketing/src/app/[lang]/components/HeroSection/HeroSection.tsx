@@ -4,16 +4,17 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { COMPANY } from "@superset/shared/constants";
 import Link from "next/link";
 import { useState } from "react";
-import { FaGithub } from "react-icons/fa";
+import { FaCloud, FaGithub } from "react-icons/fa";
 import { DownloadButton } from "../DownloadButton";
 import { WaitlistModal } from "../WaitlistModal";
 import { BoidsBackground } from "./components/BoidsBackground";
+import { HeroReassurance } from "./components/HeroReassurance";
 import { ProductDemo } from "./components/ProductDemo";
 import { TypewriterText } from "./components/TypewriterText";
 
 export function HeroSection() {
 	const [isWaitlistOpen, setIsWaitlistOpen] = useState(false);
-	const { t } = useLingui();
+	const { t, i18n } = useLingui();
 
 	const headlineSegments = [
 		{
@@ -47,21 +48,21 @@ export function HeroSection() {
 				<BoidsBackground />
 				<div className="relative w-full max-w-7xl mx-auto px-6 sm:px-8">
 					<div className="flex flex-col items-center text-center">
-						{/* Hiring pill: in-flow badge above the headline */}
 						<Link
-							href="/join-us"
-							className="group mb-6 sm:mb-8 inline-flex w-max items-center gap-2 whitespace-nowrap rounded-[2px] border border-border bg-background/80 px-3 py-1.5 text-xs font-mono text-muted-foreground transition-colors hover:text-foreground hover:border-foreground/[0.2]"
+							href={i18n.locale === "en" ? "/cloud" : `/${i18n.locale}/cloud`}
+							className="group mb-6 sm:mb-8 inline-flex max-w-full items-center gap-2 rounded-[2px] border border-border bg-background/80 px-3 py-1.5 text-xs font-mono text-muted-foreground transition-colors hover:text-foreground hover:border-foreground/[0.2]"
 						>
-							<span className="text-brand shrink-0">●</span>
+							<FaCloud
+								aria-hidden="true"
+								className="size-3.5 text-foreground shrink-0"
+							/>
 							<span>
-								<span className="sm:hidden">
-									<Trans>We&apos;re hiring engineers</Trans>
-								</span>
-								<span className="hidden sm:inline">
-									<Trans>We&apos;re hiring engineers in San Francisco</Trans>
-								</span>
+								<Trans>Cloud is coming. Become a design partner</Trans>
 							</span>
-							<span className="shrink-0 transition-transform group-hover:translate-x-0.5">
+							<span
+								aria-hidden="true"
+								className="shrink-0 transition-transform group-hover:translate-x-0.5"
+							>
 								→
 							</span>
 						</Link>
@@ -103,7 +104,10 @@ export function HeroSection() {
 						</div>
 
 						<div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4 mt-6 sm:mt-8">
-							<DownloadButton onJoinWaitlist={() => setIsWaitlistOpen(true)} />
+							<DownloadButton
+								source="hero"
+								onJoinWaitlist={() => setIsWaitlistOpen(true)}
+							/>
 							<button
 								type="button"
 								className="px-4 py-2.5 sm:px-6 sm:py-3 text-sm sm:text-base font-normal bg-background border border-border text-foreground hover:bg-muted transition-colors flex items-center gap-2"
@@ -116,6 +120,7 @@ export function HeroSection() {
 								<FaGithub className="size-4" />
 							</button>
 						</div>
+						<HeroReassurance />
 					</div>
 
 					<div className="relative w-full mt-20 sm:mt-32 lg:mt-40">
