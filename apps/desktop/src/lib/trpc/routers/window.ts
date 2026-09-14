@@ -52,13 +52,6 @@ export const createWindowRouter = () => {
 			return { success: true };
 		}),
 
-		/**
-		 * Persisted keys of every open window. The renderer holds per-window
-		 * state in localStorage, which is shared across windows and has no owner
-		 * to clean it up — this is what lets a window sweep entries belonging to
-		 * windows that no longer exist.
-		 */
-
 		/** The organization this window currently shows (per-window). */
 		getActiveOrg: publicProcedure.query(({ ctx }) => {
 			return ctx.senderWindow ? getOrg(ctx.senderWindow.id) : null;

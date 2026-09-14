@@ -31,9 +31,6 @@ initBootErrorHandling(rootElement);
 pruneExpiredTerminalState();
 // Keys from removed features otherwise live on user profiles forever.
 sweepDeadPersistedKeys();
-// Router history is per window now, and closed windows leave theirs behind.
-// Deliberately not awaited: it needs the main process, and boot must not wait.
-
 const router = createRouter({
 	routeTree,
 	history: persistentHistory,
