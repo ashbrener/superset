@@ -4,10 +4,7 @@ import { msg } from "@lingui/core/macro";
 import { i18n } from "@superset/i18n";
 import { dialog, Menu } from "electron";
 import { menuEmitter } from "main/lib/menu-events";
-import {
-	getOrg,
-	setOrg,
-} from "main/lib/window-registry/window-registry";
+import { getOrg, setOrg } from "main/lib/window-registry/window-registry";
 import { getImageMimeType } from "shared/file-types";
 import { z } from "zod";
 import { publicProcedure, router } from "..";

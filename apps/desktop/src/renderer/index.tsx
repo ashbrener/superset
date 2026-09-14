@@ -13,9 +13,7 @@ import {
 	reportBootError,
 } from "./lib/boot-errors";
 import { sweepDeadPersistedKeys } from "./lib/persisted-keys";
-import {
-	persistentHistory,
-} from "./lib/persistent-hash-history";
+import { persistentHistory } from "./lib/persistent-hash-history";
 import { posthog } from "./lib/posthog";
 import { pruneExpiredTerminalState } from "./lib/terminal/terminal-buffer-gc";
 import { electronQueryClient } from "./providers/ElectronTRPCProvider";
