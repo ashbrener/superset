@@ -1,5 +1,12 @@
+import { watch as probeNativeWatch } from "node:fs";
 import { realpath, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import {
+	clearInterval,
+	clearTimeout,
+	setInterval,
+	setTimeout,
+} from "node:timers";
 import {
 	type AsyncSubscription,
 	type Event as ParcelWatcherEvent,
@@ -65,11 +72,42 @@ function escapeGlobMagic(input: string): string {
 	return input.replace(/[\\*?{}()[\]!+@|^$]/g, (char) => `\\${char}`);
 }
 
+// Linux: @parcel/watcher's inotify backend starts on a thread and the caller
+// blocks until that thread signals it started. When inotify_init fails
+// (EMFILE at fs.inotify.max_user_instances, 128 by default and shared by
+// every process of the user) the thread throws before signalling and the
+// calling thread — host-service's event loop — waits forever. A throwaway
+// fs.watch makes the same inotify_init call and fails cleanly instead.
+function assertNativeWatchAvailable(dir: string): void {
+	if (process.platform !== "linux") return;
+	let probe: ReturnType<typeof probeNativeWatch>;
+	try {
+		probe = probeNativeWatch(dir, { persistent: false });
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code ?? "unknown";
+		throw new Error(
+			`Cannot watch path: inotify unavailable (${code}); raise fs.inotify.max_user_instances or close other watchers: ${dir}`,
+		);
+	}
+	probe.close();
+}
+
 // Wall-clock budget for the nested-repo scan (bounds attach latency on a slow
 // or network-backed FS, where readdir latency — not directory count — is the
 // limiter). The static ignore globs still cover the known worktree conventions
 // if the scan truncates here.
 const NESTED_REPO_SCAN_DEADLINE_MS = 3_000;
+
+/**
+ * Nested-repo scans allowed to run at once. Watcher attaches arrive in bursts —
+ * every non-archived workspace registers git interest at the same time — and a
+ * scan holds its whole breadth-first frontier until it returns. Running them
+ * all together stacks those frontiers without finishing any of them sooner:
+ * `readdir` is served by libuv's threadpool and a scan awaits one at a time, so
+ * one scan can only ever keep one thread busy. Unbounded, that is how
+ * host-service reached V8's heap limit and aborted (DESKTOP-H1).
+ */
+const NESTED_REPO_SCAN_CONCURRENCY = 4;
 
 /**
  * Whether a root-relative path falls under any pruned directory: a static
@@ -80,14 +118,21 @@ const NESTED_REPO_SCAN_DEADLINE_MS = 3_000;
  * over-reporting a file there as watched only costs a missed targeted watch
  * on a file type nobody opens.
  */
+const WORKTREE_CONTAINER_NAMES = new Set([".worktrees", ".conductor"]);
+
 export function isRelPathUnderPrunedDirs(
 	relative: string,
 	prunedRelPrefixes: readonly string[],
+	useDefaultIgnores = true,
 ): boolean {
 	const segments = relative.split("/");
 	for (let i = 0; i < segments.length - 1; i += 1) {
 		const segment = segments[i] as string;
-		if (DEFAULT_IGNORE_DIR_NAMES.has(segment)) {
+		if (
+			segment === ".git" ||
+			WORKTREE_CONTAINER_NAMES.has(segment) ||
+			(useDefaultIgnores && DEFAULT_IGNORE_DIR_NAMES.has(segment))
+		) {
 			return true;
 		}
 		// `**/.claude/worktrees/**` is the one multi-segment static glob.
@@ -220,6 +265,8 @@ function internalToSearchPatchEvent(
 export interface FsWatcherManagerOptions {
 	debounceMs?: number;
 	ignore?: string[];
+	/** Disable search exclusions; .git and sibling-worktree containers stay pruned. */
+	useDefaultIgnores?: boolean;
 	/**
 	 * Returns watch-root-relative directories that git ignores entirely
 	 * (fully-untracked subtrees like `.next` or `__pycache__`), so they can be
@@ -241,6 +288,7 @@ export interface FsWatcherManagerOptions {
 export class FsWatcherManager {
 	private readonly debounceMs: number;
 	private readonly ignore: string[];
+	private readonly useDefaultIgnores: boolean;
 	private readonly listGitIgnoredDirs?: (rootPath: string) => Promise<string[]>;
 	private readonly filePathsMax: number;
 	private readonly recoveryPollMs: number;
@@ -257,12 +305,27 @@ export class FsWatcherManager {
 	 */
 	private enospcErrorLogged = false;
 
+	/** Slots held/queued for `computeNestedRepoRelDirs`. A finishing scan hands
+	 * its slot straight to the next waiter, so the count only moves when a slot
+	 * is created or released. */
+	private runningNestedRepoScans = 0;
+	private readonly waitingNestedRepoScans: (() => void)[] = [];
+
 	constructor(options: FsWatcherManagerOptions = {}) {
 		this.debounceMs = options.debounceMs ?? 75;
-		// Merged so a custom pattern can't silently drop node_modules/.git.
-		this.ignore = options.ignore
-			? [...new Set([...DEFAULT_IGNORE_PATTERNS, ...options.ignore])]
-			: DEFAULT_IGNORE_PATTERNS;
+		this.useDefaultIgnores = options.useDefaultIgnores !== false;
+		// Git status must observe tracked build/vendor files too. Gitignored
+		// directories are still pruned by the dynamic listing below.
+		const defaults =
+			options.useDefaultIgnores === false
+				? [
+						"**/.git/**",
+						"**/.worktrees/**",
+						"**/.claude/worktrees/**",
+						"**/.conductor/**",
+					]
+				: DEFAULT_IGNORE_PATTERNS;
+		this.ignore = [...new Set([...defaults, ...(options.ignore ?? [])])];
 		this.listGitIgnoredDirs = options.listGitIgnoredDirs;
 		this.filePathsMax = options.filePathsMax ?? FILE_PATHS_MAX;
 		this.recoveryPollMs = options.recoveryPollMs ?? 2_000;
@@ -561,6 +624,7 @@ export class FsWatcherManager {
 		// Subscribe to the resolved real path so kernel paths come back in a
 		// consistent form; we map them back to `state.absolutePath` in
 		// `normalizeEvents`. Mirrors VS Code's parcelWatcher.ts:364.
+		assertNativeWatchAvailable(realPath);
 		state.subscription = await subscribeToFilesystem(
 			realPath,
 			(error, events) => {
@@ -627,6 +691,13 @@ export class FsWatcherManager {
 	 * pre-existing behavior, not a crash).
 	 */
 	private async computeNestedRepoRelDirs(realPath: string): Promise<string[]> {
+		if (this.runningNestedRepoScans >= NESTED_REPO_SCAN_CONCURRENCY) {
+			await new Promise<void>((resolve) =>
+				this.waitingNestedRepoScans.push(resolve),
+			);
+		} else {
+			this.runningNestedRepoScans += 1;
+		}
 		try {
 			const { roots, truncated } = await findNestedRepoRoots(realPath, {
 				pruneDirNames: DEFAULT_IGNORE_DIR_NAMES,
@@ -645,6 +716,10 @@ export class FsWatcherManager {
 				error: toErrorMessage(error),
 			});
 			return [];
+		} finally {
+			const next = this.waitingNestedRepoScans.shift();
+			if (next) next();
+			else this.runningNestedRepoScans -= 1;
 		}
 	}
 
@@ -775,7 +850,11 @@ export class FsWatcherManager {
 		if (relative === "" || relative.startsWith("..")) {
 			return true;
 		}
-		return isRelPathUnderPrunedDirs(relative, state.prunedRelPrefixes);
+		return isRelPathUnderPrunedDirs(
+			relative,
+			state.prunedRelPrefixes,
+			this.useDefaultIgnores,
+		);
 	}
 
 	/**

@@ -30,6 +30,14 @@ const SIMPLE_GIT_BASE_DIR_MISSING_PATTERN =
 // ordinary failures all the time.
 const XCODE_SELECT_NO_TOOLS_PATTERN =
 	/^xcode-select: .*no developer tools were found/im;
+// The same stub when Xcode is installed but cannot run: it asks xcodebuild
+// where git is, xcodebuild fails to load its own libraries (a broken Xcode
+// after an OS upgrade), and the stub ends with this sentence instead of
+// running git. Every git command fails the same way until Xcode or the
+// Command Line Tools are reinstalled. Naming `git` in the sentence keeps this
+// off a hook that reaches some other tool through the same stub.
+const XCODE_SELECT_GIT_NOT_LOCATED_PATTERN =
+	/^xcode-select: Failed to locate 'git', requesting installation of command line developer tools\.$/im;
 // A content filter's helper program is not installed on this machine. Git runs
 // `filter.<name>.process`/`.clean` through the shell with the configured
 // command as the shell's $0, so an absent helper fails as
@@ -55,12 +63,37 @@ const FILTER_HELPER_MISSING_PATTERN =
 // failures, which name blobs, loose files and stdin rather than this damage.
 const UNREADABLE_TREE_OBJECT_PATTERN =
 	/unable to read tree \(?[0-9a-f]{7,64}\)?/i;
+// Git's text (is_submodule_modified, submodule.c) when a gitlink in the index
+// — a nested repository or submodule — has a `.git` that is a directory but
+// not a repository: HEAD, objects or refs are gone, which is what a cloud-sync
+// client leaves behind when it rewrites a nested `.git`. Git opens every
+// gitlink before it reports status or a diff and dies at the first bad one, so
+// status, diff and add all fail until the nested checkout is repaired or its
+// gitlink removed. The workspace itself resolved fine: git's wording for a
+// repository that cannot be found is "not a git repository", which
+// NOT_GIT_REPO_PATTERN keeps.
+const NESTED_REPO_GIT_DIR_INVALID_PATTERN =
+	/^fatal: '.*\/\.git' not recognized as a git repository$/im;
+// Git's closing line (builtin/push.c) whenever a push it ran to completion
+// was refused: a local pre-push hook exited non-zero, the remote rejected a
+// ref (non-fast-forward, protected branch, pre-receive hook), or both. The
+// refusing party has already written its reason above this line — hook
+// output, `! [rejected]`, `remote:` — and that reason is the user's to act
+// on. Auth and network failures die before any ref is offered and never
+// print this line. The one variant that is ours rather than a refusal is
+// carved out below: git also closes with it after complaining that the
+// source refspec resolves to nothing, which means the push arguments were
+// wrong.
+const PUSH_REFUSED_PATTERN = /^error: failed to push some refs to '/im;
+const PUSH_SRC_REFSPEC_UNRESOLVED_PATTERN =
+	/^error: src refspec .* does not match any$/im;
 
 /**
- * Rethrows environmental git failures as typed non-500 TRPCErrors — the same
- * classification resolve-worktree.ts applies before git runs — so the Sentry
- * middleware doesn't report them as bugs. No-op for anything else; genuine
- * unexpected git failures keep reporting as 500s.
+ * Rethrows environmental git failures — the same classification
+ * resolve-worktree.ts applies before git runs — and pushes git refused as
+ * typed non-500 TRPCErrors, so the Sentry middleware doesn't report them as
+ * bugs. No-op for anything else; genuine unexpected git failures keep
+ * reporting as 500s.
  */
 export function rethrowEnvironmentalGitError(error: unknown): void {
 	if (error instanceof TRPCError || !(error instanceof Error)) return;
@@ -99,7 +132,10 @@ export function rethrowEnvironmentalGitError(error: unknown): void {
 			cause: { kind: "GIT_ENVIRONMENT" },
 		});
 	}
-	if (XCODE_SELECT_NO_TOOLS_PATTERN.test(error.message)) {
+	if (
+		XCODE_SELECT_NO_TOOLS_PATTERN.test(error.message) ||
+		XCODE_SELECT_GIT_NOT_LOCATED_PATTERN.test(error.message)
+	) {
 		throw new TRPCError({
 			code: "PRECONDITION_FAILED",
 			message: error.message,
@@ -113,11 +149,24 @@ export function rethrowEnvironmentalGitError(error: unknown): void {
 			cause: { kind: "GIT_ENVIRONMENT" },
 		});
 	}
-	if (UNREADABLE_TREE_OBJECT_PATTERN.test(error.message)) {
+	if (
+		UNREADABLE_TREE_OBJECT_PATTERN.test(error.message) ||
+		NESTED_REPO_GIT_DIR_INVALID_PATTERN.test(error.message)
+	) {
 		throw new TRPCError({
 			code: "PRECONDITION_FAILED",
 			message: error.message,
 			cause: { kind: "GIT_REPO_DAMAGED" },
+		});
+	}
+	if (
+		PUSH_REFUSED_PATTERN.test(error.message) &&
+		!PUSH_SRC_REFSPEC_UNRESOLVED_PATTERN.test(error.message)
+	) {
+		throw new TRPCError({
+			code: "PRECONDITION_FAILED",
+			message: error.message,
+			cause: { kind: "PUSH_REJECTED" },
 		});
 	}
 }

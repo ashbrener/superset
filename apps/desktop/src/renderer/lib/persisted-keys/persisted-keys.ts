@@ -45,6 +45,8 @@ export const DEAD_KEYS: DeadKey[] = [
 	// these at module evaluation, so the sweep only catches profiles whose
 	// owning window never opens again.
 	{ key: "router-history", match: "prefix" },
+	// Launch-time "join the leaderboard" prompt removed; joining lives in settings
+	{ key: "leaderboard-asked-v1", match: "exact" },
 ];
 
 function matchesDeadKey(key: string): boolean {

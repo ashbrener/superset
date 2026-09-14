@@ -1,12 +1,12 @@
 import type { WorkspaceStore } from "@superset/panes";
 import { env } from "renderer/env.renderer";
 import type { FolderLinkAction, LinkAction } from "renderer/lib/clickPolicy";
+import { parseSupersetPageUrl } from "renderer/lib/parseSupersetPageUrl";
 import { electronTrpcClient } from "renderer/lib/trpc-client";
 import type { PaneViewerData } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/types";
 import { openPagePaneInStore } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/utils/openPagePaneInStore";
 import { openUrlInV2Workspace } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/utils/openUrlInV2Workspace";
 import type { StoreApi } from "zustand/vanilla";
-import { parseSupersetPageUrl } from "../parseSupersetPageUrl";
 
 /**
  * Everything a terminal link action needs to reach the rest of the app.
@@ -42,7 +42,11 @@ export function runUrlLinkAction(
 		? parseSupersetPageUrl(url, env.NEXT_PUBLIC_WEB_URL)
 		: null;
 	if (pageSlug) {
-		openPagePaneInStore(deps.store, { slug: pageSlug });
+		openPagePaneInStore(
+			deps.store,
+			{ slug: pageSlug },
+			action === "newTab" ? "tab" : "split",
+		);
 		return;
 	}
 	openUrlInV2Workspace({

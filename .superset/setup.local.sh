@@ -40,7 +40,7 @@ local_ensure_env() {
     cp .env.local.example .env
     success "Created .env from .env.local.example"
   else
-    success ".env already exists — leaving as-is"
+    success ".env already exists — keeping its values; keys it lacks are seeded below"
   fi
   return 0
 }
@@ -194,6 +194,8 @@ local_write_env() {
   local CODE_INSPECTOR_PORT=$((BASE + 11))
   local RELAY_PORT=$((BASE + 13))
   local USERCONTENT_DEV_PORT=$((BASE + 14))
+  local SANDBOX_GATE_DEV_PORT=$((BASE + 15))
+  local REALTIME_PORT=$((BASE + 18))
 
   {
     echo ""
@@ -228,6 +230,8 @@ local_write_env() {
     write_env_var "CODE_INSPECTOR_PORT" "$CODE_INSPECTOR_PORT"
     write_env_var "RELAY_PORT" "$RELAY_PORT"
     write_env_var "USERCONTENT_DEV_PORT" "$USERCONTENT_DEV_PORT"
+    write_env_var "SANDBOX_GATE_DEV_PORT" "$SANDBOX_GATE_DEV_PORT"
+    write_env_var "REALTIME_PORT" "$REALTIME_PORT"
     echo ""
     echo "# Cross-app URLs (allocated ports)"
     write_env_var "NEXT_PUBLIC_API_URL" "http://localhost:$API_PORT"
@@ -238,8 +242,11 @@ local_write_env() {
     write_env_var "NEXT_PUBLIC_DESKTOP_URL" "http://localhost:$DESKTOP_VITE_PORT"
     write_env_var "RELAY_URL" "http://localhost:$RELAY_PORT"
     write_env_var "NEXT_PUBLIC_RELAY_URL" "http://localhost:$RELAY_PORT"
+    write_env_var "REALTIME_URL" "http://localhost:$REALTIME_PORT"
+    write_env_var "REALTIME_NUDGE_SECRET" "fake-realtime-nudge-secret"
     write_env_var "SUPERSET_WEB_URL" "http://localhost:$WEB_PORT"
     write_env_var "USERCONTENT_URL" "http://frame.usercontent.localhost:$USERCONTENT_DEV_PORT"
+    write_env_var "SANDBOX_GATE_ORIGIN" "http://127.0.0.1:$SANDBOX_GATE_DEV_PORT"
     echo ""
     echo "# Streams URLs"
     write_env_var "PORT" "$STREAMS_PORT"
@@ -264,6 +271,7 @@ local_write_env() {
     { "port": $DESKTOP_NOTIFICATIONS_PORT, "label": "Notifications" },
     { "port": $STREAMS_PORT, "label": "Streams" },
     { "port": $USERCONTENT_DEV_PORT, "label": "Usercontent Worker" },
+    { "port": $SANDBOX_GATE_DEV_PORT, "label": "Gate Worker" },
     { "port": $LOCAL_PG_PORT, "label": "Postgres" },
     { "port": $LOCAL_NEON_PROXY_PORT, "label": "Neon Proxy" },
     { "port": $LOCAL_REDIS_PORT, "label": "Redis" },
@@ -300,6 +308,8 @@ local_setup_main() {
   step_install_dependencies || step_failed "Install dependencies"
   local_allocate_ports || step_failed "Allocate ports"
   local_write_env || step_failed "Write workspace .env"
+  step_seed_env_placeholders || step_failed "Seed .env placeholders"
+  step_validate_env || step_failed "Validate .env"
   local_db_up || step_failed "Start local DB stack"
   local_migrate || step_failed "Apply migrations"
   local_seed_dev_account || step_failed "Seed dev account"

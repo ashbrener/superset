@@ -8,13 +8,19 @@ import { Client } from "@upstash/qstash";
 import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { z } from "zod";
 import { env } from "../../env";
+import { assertCloudAccess, assertMember } from "../../lib/cloud-guards";
+import { nudge } from "../../lib/realtime";
 import {
 	cloudRepo,
 	deleteSandbox,
+	HOST_SERVICE_PORT,
 	listRemoteBranches,
-	mintPreviewAccess,
-} from "../../lib/blaxel";
-import { assertInternal, assertMember } from "../../lib/cloud-guards";
+	mintSandboxGateAccess,
+	resolveSandboxAddress,
+	SandboxNotReadyError,
+	SandboxUnavailableError,
+	sandboxHostSecretFor,
+} from "../../lib/sandbox";
 import { jwtProcedure, userError } from "../../trpc";
 import {
 	FALLBACK_NAME,
@@ -39,7 +45,7 @@ export const cloudWorkspaceRouter = {
 	list: jwtProcedure
 		.input(z.object({ organizationId: z.string().uuid() }))
 		.query(async ({ ctx, input }) => {
-			assertInternal(ctx.email);
+			await assertCloudAccess(ctx);
 			assertMember(ctx.organizationIds, input.organizationId);
 			return db
 				.select()
@@ -66,7 +72,7 @@ export const cloudWorkspaceRouter = {
 			}),
 		)
 		.query(async ({ ctx, input }) => {
-			assertInternal(ctx.email);
+			await assertCloudAccess(ctx);
 			assertMember(ctx.organizationIds, input.organizationId);
 			const repo = await cloudRepo();
 			if (!repo) return { defaultBranch: null, items: [] };
@@ -77,7 +83,7 @@ export const cloudWorkspaceRouter = {
 	repo: jwtProcedure
 		.input(z.object({ organizationId: z.string().uuid() }))
 		.query(async ({ ctx, input }) => {
-			assertInternal(ctx.email);
+			await assertCloudAccess(ctx);
 			assertMember(ctx.organizationIds, input.organizationId);
 			return cloudRepo();
 		}),
@@ -116,7 +122,7 @@ export const cloudWorkspaceRouter = {
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			assertInternal(ctx.email);
+			await assertCloudAccess(ctx);
 			assertMember(ctx.organizationIds, input.organizationId);
 			if (input.agent && !isCloudAgentId(input.agent)) {
 				// Only the built-in presets exist inside a sandbox; the clients offer
@@ -150,7 +156,7 @@ export const cloudWorkspaceRouter = {
 
 			// The id is generated here rather than by the database so the sandbox
 			// name can be derived before the insert. A placeholder would briefly
-			// leave two rows sharing ("blaxel", ""), which the unique constraint
+			// leave two rows sharing ("vercel", ""), which the unique constraint
 			// rejects whenever two creates overlap.
 			const id = crypto.randomUUID();
 			const providerSandboxId = sandboxNameFor(id);
@@ -161,7 +167,7 @@ export const cloudWorkspaceRouter = {
 					organizationId: input.organizationId,
 					name: input.name ?? FALLBACK_NAME,
 					branch,
-					provider: "blaxel",
+					provider: "vercel",
 					providerSandboxId,
 					status: "provisioning",
 					environmentId: environment.id,
@@ -193,6 +199,7 @@ export const cloudWorkspaceRouter = {
 					: {}),
 			};
 
+			nudge(row.organizationId, "cloud_workspaces");
 			if (isLocalApi) {
 				void provisionCloudWorkspace(job).catch((error) => {
 					console.error(
@@ -256,28 +263,35 @@ export const cloudWorkspaceRouter = {
 					i18nKey: "serverError.cloudWorkspace.notFound",
 				});
 			}
-			assertInternal(ctx.email);
+			await assertCloudAccess(ctx);
 			assertMember(ctx.organizationIds, row.organizationId);
 			const [renamed] = await db
 				.update(cloudWorkspaces)
 				.set({ name: input.name })
 				.where(eq(cloudWorkspaces.id, input.id))
 				.returning();
+			nudge(row.organizationId, "cloud_workspaces");
 			return renamed ?? row;
 		}),
 
 	/**
-	 * Checks org membership, then mints a short-lived provider token.
+	 * Checks org membership, then signs a short-lived token for this workspace.
 	 *
-	 * This is the *only* gate. host-service inside a sandbox trusts the
-	 * provider's edge and checks nothing itself (`EdgeGuardedHostAuthProvider`),
-	 * so this token is the whole of the sandbox's access control: whoever holds
-	 * an unexpired one has terminals, git and the filesystem. Hence the short
-	 * TTL, and hence the checks above running before it is minted rather than
-	 * anywhere later.
+	 * This is the *only* gate. A sandbox's URL is public and host-service
+	 * inside it checks exactly this token (`SandboxAccessHostAuthProvider`),
+	 * so whoever holds an unexpired one has terminals, git and the filesystem.
+	 * Hence the short TTL, and hence the checks running before it is minted
+	 * rather than anywhere later.
+	 *
+	 * `wake` is the difference between addressing a workspace and using it: a
+	 * client keeps a live address for everything it lists, and that must not
+	 * keep every sandbox running. Only the workspace someone has open asks to
+	 * be woken, which resumes a stopped session and keeps a running one alive.
 	 */
 	access: jwtProcedure
-		.input(z.object({ id: z.string().uuid() }))
+		.input(
+			z.object({ id: z.string().uuid(), wake: z.boolean().default(false) }),
+		)
 		.mutation(async ({ ctx, input }) => {
 			const row = await db.query.cloudWorkspaces.findFirst({
 				where: eq(cloudWorkspaces.id, input.id),
@@ -289,7 +303,7 @@ export const cloudWorkspaceRouter = {
 					i18nKey: "serverError.cloudWorkspace.notFound",
 				});
 			}
-			assertInternal(ctx.email);
+			await assertCloudAccess(ctx);
 			assertMember(ctx.organizationIds, row.organizationId);
 			if (row.status !== "ready") {
 				throw new TRPCError({
@@ -298,12 +312,45 @@ export const cloudWorkspaceRouter = {
 					cause: { kind: "CLOUD_WORKSPACE_NOT_READY", status: row.status },
 				});
 			}
-			const access = await mintPreviewAccess(row.providerSandboxId);
-			return {
-				url: access.url,
-				token: access.token,
-				expiresAt: access.expiresAt,
-			};
+			let address: { target: string; running: boolean };
+			try {
+				address = await resolveSandboxAddress({
+					providerSandboxId: row.providerSandboxId,
+					wake: input.wake
+						? { hostSecret: await sandboxHostSecretFor(row.id) }
+						: false,
+				});
+			} catch (error) {
+				if (error instanceof SandboxNotReadyError) {
+					throw new TRPCError({
+						code: "TIMEOUT",
+						message: "Cloud workspace is still starting",
+						cause: error,
+					});
+				}
+				if (!(error instanceof SandboxUnavailableError)) throw error;
+				// The sandbox is gone or can never resume. A `ready` row nothing
+				// can open would sit in the sidebar forever; failed is the state
+				// the client already renders with a way out.
+				await db
+					.update(cloudWorkspaces)
+					.set({ status: "failed", sandboxUrl: null })
+					.where(eq(cloudWorkspaces.id, row.id));
+				nudge(row.organizationId, "cloud_workspaces");
+				console.error(`[cloud-workspace] ${row.id} sandbox unavailable`, error);
+				throw new TRPCError({
+					code: "PRECONDITION_FAILED",
+					message: "Cloud workspace is failed",
+					cause: { kind: "CLOUD_WORKSPACE_NOT_READY", status: "failed" },
+				});
+			}
+			const { url, token, expiresAt } = await mintSandboxGateAccess({
+				workspaceId: row.id,
+				userId: ctx.userId,
+				port: HOST_SERVICE_PORT,
+				target: address.target,
+			});
+			return { url, running: address.running, token, expiresAt };
 		}),
 
 	delete: jwtProcedure
@@ -313,16 +360,18 @@ export const cloudWorkspaceRouter = {
 				where: eq(cloudWorkspaces.id, input.id),
 			});
 			if (!row) return { deleted: false };
-			assertInternal(ctx.email);
+			await assertCloudAccess(ctx);
 			assertMember(ctx.organizationIds, row.organizationId);
 
-			if (row.providerSandboxId) {
+			// A row from a retired provider has no sandbox left to delete.
+			if (row.providerSandboxId && row.provider === "vercel") {
 				await deleteSandbox(row.providerSandboxId);
 			}
 			await db
 				.update(cloudWorkspaces)
 				.set({ status: "deleted", sandboxUrl: null })
 				.where(eq(cloudWorkspaces.id, row.id));
+			nudge(row.organizationId, "cloud_workspaces");
 			return { deleted: true };
 		}),
 } satisfies TRPCRouterRecord;
